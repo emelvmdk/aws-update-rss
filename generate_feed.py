@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime, parsedate_to_datetime
@@ -20,6 +21,9 @@ PUBLIC_DIR = ROOT / "public"
 OUTPUT_FILE = PUBLIC_DIR / "feed.xml"
 STATUS_FILE = PUBLIC_DIR / "status.html"
 INDEX_FILE = PUBLIC_DIR / "index.html"
+REVIEW_FILE = PUBLIC_DIR / "review.html"
+REVIEW_JSON_FILE = PUBLIC_DIR / "review.json"
+URL_HINT_SKIP_REASON = "url_service_hint_missing"
 DOC_SERVICE_NAMES = {
     "aws-backup": "AWS Backup",
     "config": "AWS Config",
@@ -220,16 +224,16 @@ def matched_keywords(text: str, keywords: list[str]) -> list[str]:
     return [keyword for keyword in keywords if keyword_matches(text, keyword)]
 
 
-def should_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> tuple[bool, list[str]]:
+def evaluate_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> tuple[bool, list[str], str]:
     mode = feed.get("filter_mode", "all")
     text = entry_text(entry)
     link = entry.get("link", "")
     if mode == "all":
-        return True, []
+        return True, [], ""
 
     filter_config = config.get("what_new_filter", {})
     if matched_keywords(text, filter_config.get("exclude_keywords", [])):
-        return False, []
+        return False, [], "excluded_keyword"
 
     always_keywords = filter_config.get("always_include_keywords")
     contextual_keywords = filter_config.get("contextual_keywords")
@@ -238,21 +242,45 @@ def should_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> 
         always_matches = matched_keywords(text, always_keywords or [])
         if always_matches:
             if not matched_keywords_have_url_hint(always_matches, link):
-                return False, []
-            return True, always_matches
+                return False, always_matches, URL_HINT_SKIP_REASON
+            return True, always_matches, ""
 
         contextual_matches = matched_keywords(text, contextual_keywords or [])
         relevance_matches = matched_keywords(text, relevance_keywords or [])
         if contextual_matches and relevance_matches:
             if not matched_keywords_have_url_hint(contextual_matches, link):
-                return False, []
-            return True, contextual_matches + relevance_matches
-        return False, []
+                return False, contextual_matches + relevance_matches, URL_HINT_SKIP_REASON
+            return True, contextual_matches + relevance_matches, ""
+        return False, [], "no_keyword_match"
 
     matches = matched_keywords(text, filter_config.get("include_keywords", []))
     if matches and not matched_keywords_have_url_hint(matches, link):
-        return False, []
-    return bool(matches), matches
+        return False, matches, URL_HINT_SKIP_REASON
+    return bool(matches), matches, "" if matches else "no_keyword_match"
+
+
+def should_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> tuple[bool, list[str]]:
+    included, matches, _ = evaluate_include(entry, feed, config)
+    return included, matches if included else []
+
+
+def review_candidate_from_entry(
+    entry: Any,
+    feed: dict[str, Any],
+    matches: list[str],
+    published_at: datetime,
+) -> dict[str, Any]:
+    link = entry.get("link", "")
+    return {
+        "title": clean_text(entry.get("title", "Untitled")),
+        "link": link,
+        "source": feed.get("name", "Unnamed feed"),
+        "category": feed.get("category", "general"),
+        "published_at": published_at.isoformat(),
+        "matched_keywords": matches,
+        "url_text": url_match_text(link),
+        "skip_reason": URL_HINT_SKIP_REASON,
+    }
 
 
 def _legacy_detect_severity_with_reasons(text: str, config: dict[str, Any]) -> tuple[str, list[str]]:
@@ -543,11 +571,12 @@ def item_to_rss_description(
     return "\n".join(lines)
 
 
-def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str], list[dict[str, Any]]]:
     session = make_session(config)
     timeout = int(config.get("fetch", {}).get("timeout_seconds", 20))
     failures: list[str] = []
     items: list[dict[str, Any]] = []
+    review_items: list[dict[str, Any]] = []
     cutoff = datetime.now(timezone.utc) - timedelta(days=int(config.get("output", {}).get("max_age_days", 30)))
 
     for feed in feeds:
@@ -571,8 +600,10 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
             published_at = parse_entry_datetime(entry)
             if published_at < cutoff:
                 continue
-            included, matches = should_include(entry, feed, config)
+            included, matches, skip_reason = evaluate_include(entry, feed, config)
             if not included:
+                if skip_reason == URL_HINT_SKIP_REASON:
+                    review_items.append(review_candidate_from_entry(entry, feed, matches, published_at))
                 continue
 
             enriched = enrich_entry(session, entry, feed, config)
@@ -617,7 +648,9 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
 
     deduped = {item["guid"]: item for item in items}
     sorted_items = sorted(deduped.values(), key=lambda item: item["published_at"], reverse=True)
-    return sorted_items[: int(config.get("output", {}).get("max_items", 100))], failures
+    sorted_review = sorted(review_items, key=lambda item: item["published_at"], reverse=True)
+    max_review_items = int(config.get("output", {}).get("max_review_items", 100))
+    return sorted_items[: int(config.get("output", {}).get("max_items", 100))], failures, sorted_review[:max_review_items]
 
 
 def build_rss(config: dict[str, Any], items: list[dict[str, Any]]) -> str:
@@ -653,12 +686,53 @@ def write_index(items: list[dict[str, Any]]) -> None:
   <h2>Latest items</h2>
   <ol>{latest}</ol>
   <p>Status: <a href=\"./status.html\">status.html</a></p>
+  <p>Review candidates: <a href=\"./review.html\">review.html</a></p>
 </body>
 </html>
 """, encoding="utf-8")
 
 
-def write_status(items: list[dict[str, Any]], failures: list[str], feeds: list[dict[str, Any]]) -> None:
+def write_review(review_items: list[dict[str, Any]]) -> None:
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "count": len(review_items),
+        "items": review_items,
+    }
+    REVIEW_JSON_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    rows = ""
+    for item in review_items:
+        rows += (
+            "<tr>"
+            f"<td>{html.escape(item['published_at'])}</td>"
+            f"<td>{html.escape(item['source'])}</td>"
+            f"<td>{html.escape(item['category'])}</td>"
+            f"<td><a href=\"{html.escape(item['link'])}\">{html.escape(item['title'])}</a></td>"
+            f"<td>{html.escape(', '.join(item['matched_keywords']))}</td>"
+            f"<td>{html.escape(item['url_text'])}</td>"
+            "</tr>"
+        )
+    if not rows:
+        rows = "<tr><td colspan=\"6\">No URL-hint review candidates.</td></tr>"
+
+    REVIEW_FILE.write_text(f"""<!doctype html>
+<html lang=\"ko\">
+<head><meta charset=\"utf-8\"><title>AWS Update RSS Review</title></head>
+<body>
+  <h1>Review candidates</h1>
+  <p>키워드는 매칭됐지만 URL 서비스 힌트가 없어 스킵된 항목만 표시합니다.</p>
+  <p>JSON: <a href=\"./review.json\">review.json</a></p>
+  <p>Count: {len(review_items)}</p>
+  <table border=\"1\" cellpadding=\"6\" cellspacing=\"0\">
+    <thead><tr><th>Published</th><th>Source</th><th>Category</th><th>Title</th><th>Matched keywords</th><th>URL text</th></tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+</body>
+</html>
+""", encoding="utf-8")
+
+
+def write_status(items: list[dict[str, Any]], failures: list[str], feeds: list[dict[str, Any]], review_items: list[dict[str, Any]]) -> None:
     failure_html = "".join(f"<li>{html.escape(failure)}</li>" for failure in failures) or "<li>No failures</li>"
     feed_html = "".join(f"<li>{html.escape(feed.get('name', 'Unnamed'))} - {html.escape(feed.get('category', 'general'))}</li>" for feed in feeds)
     STATUS_FILE.write_text(f"""<!doctype html>
@@ -669,6 +743,7 @@ def write_status(items: list[dict[str, Any]], failures: list[str], feeds: list[d
   <p>Generated at: {html.escape(datetime.now(timezone.utc).isoformat())}</p>
   <p>Item count: {len(items)}</p>
   <p>Feed count: {len(feeds)}</p>
+  <p>URL-hint review candidate count: {len(review_items)} (<a href=\"./review.html\">review.html</a>, <a href=\"./review.json\">review.json</a>)</p>
   <h2>Failures / warnings</h2>
   <ul>{failure_html}</ul>
   <h2>Feeds</h2>
@@ -681,12 +756,14 @@ def write_status(items: list[dict[str, Any]], failures: list[str], feeds: list[d
 def main() -> None:
     config = load_config()
     feeds = load_feeds()
-    items, failures = collect_items(config, feeds)
+    items, failures, review_items = collect_items(config, feeds)
     PUBLIC_DIR.mkdir(exist_ok=True)
     OUTPUT_FILE.write_text(build_rss(config, items), encoding="utf-8")
     write_index(items)
-    write_status(items, failures, feeds)
+    write_review(review_items)
+    write_status(items, failures, feeds, review_items)
     print(f"Generated {OUTPUT_FILE} with {len(items)} items from {len(feeds)} feeds.")
+    print(f"Generated {REVIEW_FILE} with {len(review_items)} URL-hint review candidates.")
     if failures:
         print("Warnings:")
         for failure in failures:
