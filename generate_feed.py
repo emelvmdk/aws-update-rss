@@ -37,6 +37,19 @@ DOC_SERVICE_NAMES = {
     "waf": "AWS WAF",
     "network-firewall": "AWS Network Firewall",
 }
+URL_ALIAS_OVERRIDES = {
+    "transit gateway": ["tgw"],
+    "gateway load balancer": ["gwlb"],
+    "gateway load balancer endpoint": ["gwlbe"],
+    "vpc endpoint": ["endpoint"],
+    "interface endpoint": ["endpoint"],
+    "gateway endpoint": ["endpoint"],
+    "aws resource access manager": ["ram"],
+    "resource access manager": ["ram"],
+    "iam identity center": ["singlesignon", "single sign on", "sso"],
+    "aws certificate manager": ["acm"],
+    "network firewall": ["network firewall"],
+}
 
 
 def clean_text(value: Any) -> str:
@@ -57,6 +70,10 @@ def has_korean(value: Any) -> bool:
 def truncate(value: str, limit: int) -> str:
     value = clean_text(value)
     return value if len(value) <= limit else value[: max(0, limit - 1)].rstrip() + "…"
+
+
+def normalize_for_match(value: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", clean_text(value).lower())).strip()
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -117,6 +134,52 @@ def response_feed_content(response: Any) -> bytes | str:
     return content if content is not None else (getattr(response, "text", "") or "")
 
 
+def docs_service_name_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.netloc.lower() != "docs.aws.amazon.com":
+        return ""
+    parts = [part for part in parsed.path.split("/") if part]
+    if parts and re.fullmatch(r"[a-z]{2}(?:_[a-z]{2})?", parts[0]):
+        parts = parts[1:]
+    if not parts:
+        return ""
+    service_key = parts[0]
+    if service_key in DOC_SERVICE_NAMES:
+        return DOC_SERVICE_NAMES[service_key]
+    if service_key.startswith("aws-"):
+        return "AWS " + " ".join(word.capitalize() for word in service_key[4:].split("-"))
+    return " ".join(word.upper() if len(word) <= 3 else word.capitalize() for word in service_key.split("-"))
+
+
+def url_match_text(url: str) -> str:
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    pieces = [parsed.netloc, parsed.path, parsed.query, docs_service_name_from_url(url)]
+    return normalize_for_match(" ".join(pieces))
+
+
+def keyword_url_aliases(keyword: str) -> list[str]:
+    normalized = normalize_for_match(keyword)
+    if not normalized:
+        return []
+    aliases = {normalized}
+    for prefix in ("aws ", "amazon "):
+        if normalized.startswith(prefix):
+            aliases.add(normalized[len(prefix) :])
+    aliases.update(URL_ALIAS_OVERRIDES.get(normalized, []))
+    return sorted(alias for alias in aliases if alias)
+
+
+def matched_keywords_have_url_hint(keywords: list[str], url: str) -> bool:
+    if not keywords:
+        return True
+    url_text = url_match_text(url)
+    if not url_text:
+        return True
+    return any(keyword_matches(url_text, alias) for keyword in keywords for alias in keyword_url_aliases(keyword))
+
+
 def parse_entry_datetime(entry: Any) -> datetime:
     for key in ("published", "updated", "created"):
         value = entry.get(key)
@@ -137,7 +200,7 @@ def parse_entry_datetime(entry: Any) -> datetime:
 
 
 def entry_text(entry: Any) -> str:
-    parts = [entry.get("title", ""), entry.get("summary", ""), entry.get("description", ""), entry.get("link", "")]
+    parts = [entry.get("title", ""), entry.get("summary", ""), entry.get("description", ""), entry.get("link", ""), url_match_text(entry.get("link", ""))]
     parts.extend(tag.get("term", "") for tag in (entry.get("tags") or []))
     return clean_text(" ".join(str(part) for part in parts)).lower()
 
@@ -160,6 +223,7 @@ def matched_keywords(text: str, keywords: list[str]) -> list[str]:
 def should_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> tuple[bool, list[str]]:
     mode = feed.get("filter_mode", "all")
     text = entry_text(entry)
+    link = entry.get("link", "")
     if mode == "all":
         return True, []
 
@@ -173,14 +237,21 @@ def should_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> 
     if always_keywords is not None or contextual_keywords is not None:
         always_matches = matched_keywords(text, always_keywords or [])
         if always_matches:
+            if not matched_keywords_have_url_hint(always_matches, link):
+                return False, []
             return True, always_matches
+
         contextual_matches = matched_keywords(text, contextual_keywords or [])
         relevance_matches = matched_keywords(text, relevance_keywords or [])
         if contextual_matches and relevance_matches:
+            if not matched_keywords_have_url_hint(contextual_matches, link):
+                return False, []
             return True, contextual_matches + relevance_matches
         return False, []
 
     matches = matched_keywords(text, filter_config.get("include_keywords", []))
+    if matches and not matched_keywords_have_url_hint(matches, link):
+        return False, []
     return bool(matches), matches
 
 
@@ -230,23 +301,6 @@ def detect_severity_with_reasons(text: str, config: dict[str, Any]) -> tuple[str
 def detect_severity(text: str, config: dict[str, Any]) -> str:
     severity, _ = detect_severity_with_reasons(text, config)
     return severity
-
-
-def docs_service_name_from_url(url: str) -> str:
-    parsed = urlparse(url)
-    if parsed.netloc.lower() != "docs.aws.amazon.com":
-        return ""
-    parts = [part for part in parsed.path.split("/") if part]
-    if parts and re.fullmatch(r"[a-z]{2}(?:_[a-z]{2})?", parts[0]):
-        parts = parts[1:]
-    if not parts:
-        return ""
-    service_key = parts[0]
-    if service_key in DOC_SERVICE_NAMES:
-        return DOC_SERVICE_NAMES[service_key]
-    if service_key.startswith("aws-"):
-        return "AWS " + " ".join(word.capitalize() for word in service_key[4:].split("-"))
-    return " ".join(word.upper() if len(word) <= 3 else word.capitalize() for word in service_key.split("-"))
 
 
 def normalize_display_title(title: str, source_title: str = "", link: str = "") -> str:
