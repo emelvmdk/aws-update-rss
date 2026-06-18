@@ -24,6 +24,8 @@ INDEX_FILE = PUBLIC_DIR / "index.html"
 REVIEW_FILE = PUBLIC_DIR / "review.html"
 REVIEW_JSON_FILE = PUBLIC_DIR / "review.json"
 URL_HINT_SKIP_REASON = "url_service_hint_missing"
+URL_HINT_DEFAULT_CATEGORIES = {"whats-new", "operations"}
+
 DOC_SERVICE_NAMES = {
     "aws-backup": "AWS Backup",
     "config": "AWS Config",
@@ -41,6 +43,7 @@ DOC_SERVICE_NAMES = {
     "waf": "AWS WAF",
     "network-firewall": "AWS Network Firewall",
 }
+
 URL_ALIAS_OVERRIDES = {
     "transit gateway": ["tgw"],
     "gateway load balancer": ["gwlb"],
@@ -63,8 +66,7 @@ def clean_text(value: Any) -> str:
     text = re.sub(r"<script[\s\S]*?</script>", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
-    text = html.unescape(text)
-    return re.sub(r"\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
 def has_korean(value: Any) -> bool:
@@ -77,7 +79,8 @@ def truncate(value: str, limit: int) -> str:
 
 
 def normalize_for_match(value: str) -> str:
-    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", clean_text(value).lower())).strip()
+    value = clean_text(value).lower()
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value)).strip()
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -98,7 +101,8 @@ def load_feeds() -> list[dict[str, Any]]:
 
 def make_session(config: dict[str, Any]) -> requests.Session:
     session = requests.Session()
-    session.headers.update({"User-Agent": config.get("fetch", {}).get("user_agent", "aws-update-rss/1.0")})
+    user_agent = config.get("fetch", {}).get("user_agent", "aws-update-rss/1.0")
+    session.headers.update({"User-Agent": user_agent})
     return session
 
 
@@ -114,6 +118,7 @@ def decode_response_text(response: Any) -> str:
     response_encoding = getattr(response, "encoding", None)
     apparent_encoding = getattr(response, "apparent_encoding", None)
     weak = {"iso-8859-1", "latin-1", "windows-1252"}
+
     candidates: list[str] = []
     if header_encoding and header_encoding.lower() not in weak:
         candidates.append(header_encoding)
@@ -175,6 +180,22 @@ def keyword_url_aliases(keyword: str) -> list[str]:
     return sorted(alias for alias in aliases if alias)
 
 
+def keyword_matches(text: str, keyword: str) -> bool:
+    keyword = keyword.strip()
+    if not keyword:
+        return False
+    lower_text = text.lower()
+    lower_keyword = keyword.lower()
+    if len(lower_keyword) <= 4 and re.fullmatch(r"[a-z0-9]+", lower_keyword):
+        pattern = rf"(?<![a-z0-9]){re.escape(lower_keyword)}(?![a-z0-9])"
+        return re.search(pattern, lower_text) is not None
+    return lower_keyword in lower_text
+
+
+def matched_keywords(text: str, keywords: list[str]) -> list[str]:
+    return [keyword for keyword in keywords if keyword_matches(text, keyword)]
+
+
 def matched_keywords_have_url_hint(keywords: list[str], url: str) -> bool:
     if not keywords:
         return True
@@ -182,6 +203,13 @@ def matched_keywords_have_url_hint(keywords: list[str], url: str) -> bool:
     if not url_text:
         return True
     return any(keyword_matches(url_text, alias) for keyword in keywords for alias in keyword_url_aliases(keyword))
+
+
+def feed_requires_url_hint(feed: dict[str, Any]) -> bool:
+    explicit = feed.get("require_url_hint")
+    if explicit is not None:
+        return bool(explicit)
+    return str(feed.get("category", "")).lower() in URL_HINT_DEFAULT_CATEGORIES
 
 
 def parse_entry_datetime(entry: Any) -> datetime:
@@ -204,30 +232,23 @@ def parse_entry_datetime(entry: Any) -> datetime:
 
 
 def entry_text(entry: Any) -> str:
-    parts = [entry.get("title", ""), entry.get("summary", ""), entry.get("description", ""), entry.get("link", ""), url_match_text(entry.get("link", ""))]
+    parts = [
+        entry.get("title", ""),
+        entry.get("summary", ""),
+        entry.get("description", ""),
+        entry.get("link", ""),
+        url_match_text(entry.get("link", "")),
+    ]
     parts.extend(tag.get("term", "") for tag in (entry.get("tags") or []))
     return clean_text(" ".join(str(part) for part in parts)).lower()
-
-
-def keyword_matches(text: str, keyword: str) -> bool:
-    keyword = keyword.strip()
-    if not keyword:
-        return False
-    lower_text = text.lower()
-    lower_keyword = keyword.lower()
-    if len(lower_keyword) <= 4 and re.fullmatch(r"[a-z0-9]+", lower_keyword):
-        return re.search(rf"(?<![a-z0-9]){re.escape(lower_keyword)}(?![a-z0-9])", lower_text) is not None
-    return lower_keyword in lower_text
-
-
-def matched_keywords(text: str, keywords: list[str]) -> list[str]:
-    return [keyword for keyword in keywords if keyword_matches(text, keyword)]
 
 
 def evaluate_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> tuple[bool, list[str], str]:
     mode = feed.get("filter_mode", "all")
     text = entry_text(entry)
     link = entry.get("link", "")
+    require_url_hint = feed_requires_url_hint(feed)
+
     if mode == "all":
         return True, [], ""
 
@@ -238,23 +259,25 @@ def evaluate_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -
     always_keywords = filter_config.get("always_include_keywords")
     contextual_keywords = filter_config.get("contextual_keywords")
     relevance_keywords = filter_config.get("relevance_keywords")
+
     if always_keywords is not None or contextual_keywords is not None:
         always_matches = matched_keywords(text, always_keywords or [])
         if always_matches:
-            if not matched_keywords_have_url_hint(always_matches, link):
+            if require_url_hint and not matched_keywords_have_url_hint(always_matches, link):
                 return False, always_matches, URL_HINT_SKIP_REASON
             return True, always_matches, ""
 
         contextual_matches = matched_keywords(text, contextual_keywords or [])
         relevance_matches = matched_keywords(text, relevance_keywords or [])
         if contextual_matches and relevance_matches:
-            if not matched_keywords_have_url_hint(contextual_matches, link):
-                return False, contextual_matches + relevance_matches, URL_HINT_SKIP_REASON
-            return True, contextual_matches + relevance_matches, ""
+            matches = contextual_matches + relevance_matches
+            if require_url_hint and not matched_keywords_have_url_hint(contextual_matches, link):
+                return False, matches, URL_HINT_SKIP_REASON
+            return True, matches, ""
         return False, [], "no_keyword_match"
 
     matches = matched_keywords(text, filter_config.get("include_keywords", []))
-    if matches and not matched_keywords_have_url_hint(matches, link):
+    if matches and require_url_hint and not matched_keywords_have_url_hint(matches, link):
         return False, matches, URL_HINT_SKIP_REASON
     return bool(matches), matches, "" if matches else "no_keyword_match"
 
@@ -264,12 +287,7 @@ def should_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> 
     return included, matches if included else []
 
 
-def review_candidate_from_entry(
-    entry: Any,
-    feed: dict[str, Any],
-    matches: list[str],
-    published_at: datetime,
-) -> dict[str, Any]:
+def review_candidate_from_entry(entry: Any, feed: dict[str, Any], matches: list[str], published_at: datetime) -> dict[str, Any]:
     link = entry.get("link", "")
     return {
         "title": clean_text(entry.get("title", "Untitled")),
@@ -404,10 +422,12 @@ def extract_page_summary(html_doc: str, prefer_korean: bool = False) -> tuple[st
     title_candidates: list[str] = []
     for selector in ['meta[property="og:title"]', 'meta[name="twitter:title"]', "h1", "title"]:
         node = soup.select_one(selector)
-        if node:
-            title = clean_text(node.get("content") if node.name == "meta" else node.get_text(" "))
-            if title and title not in title_candidates:
-                title_candidates.append(title)
+        if not node:
+            continue
+        title = clean_text(node.get("content") if node.name == "meta" else node.get_text(" "))
+        if title and title not in title_candidates:
+            title_candidates.append(title)
+
     title = ""
     if prefer_korean:
         title = next((candidate for candidate in title_candidates if has_korean(candidate)), "")
@@ -426,8 +446,7 @@ def extract_page_summary(html_doc: str, prefer_korean: bool = False) -> tuple[st
         text = clean_text(node.get_text(" "))
         if len(text) < 45:
             continue
-        lowered = text.lower()
-        if "cookie" in lowered or "privacy" in lowered:
+        if "cookie" in text.lower() or "privacy" in text.lower():
             continue
         if text not in paragraphs:
             paragraphs.append(text)
@@ -480,11 +499,11 @@ def enrich_entry(session: requests.Session, entry: Any, feed: dict[str, Any], co
             language = "ko" if "aws.amazon.com/ko/" in localized else "ko_kr"
             localized_payload = fetch_page_payload(session, localized, language, timeout)
             if localized_payload:
-                display_title = normalize_display_title(localized_payload["title"] or source_title, source_title, localized_payload["url"])
+                title = normalize_display_title(localized_payload["title"] or source_title, source_title, localized_payload["url"])
                 return {
                     "link": localized_payload["url"],
                     "language": language,
-                    "title": display_title,
+                    "title": title,
                     "page_summary": localized_payload["summary"],
                     "rss_summary": rss_summary,
                     "source_link": source_link,
@@ -494,11 +513,11 @@ def enrich_entry(session: requests.Session, entry: Any, feed: dict[str, Any], co
                 }
 
     if english_payload:
-        display_title = normalize_display_title(english_payload["title"] or rss_title, source_title, english_payload["url"])
+        title = normalize_display_title(english_payload["title"] or rss_title, source_title, english_payload["url"])
         return {
             "link": english_payload["url"],
             "language": "en fallback",
-            "title": display_title,
+            "title": title,
             "page_summary": english_payload["summary"],
             "rss_summary": rss_summary,
             "source_link": source_link,
@@ -507,11 +526,11 @@ def enrich_entry(session: requests.Session, entry: Any, feed: dict[str, Any], co
             "source_language": "en source",
         }
 
-    display_title = normalize_display_title(rss_title, rss_title, original_link)
+    title = normalize_display_title(rss_title, rss_title, original_link)
     return {
         "link": original_link,
         "language": "rss-only fallback",
-        "title": display_title,
+        "title": title,
         "page_summary": "",
         "rss_summary": rss_summary,
         "source_link": original_link,
@@ -693,11 +712,7 @@ def write_index(items: list[dict[str, Any]]) -> None:
 
 
 def write_review(review_items: list[dict[str, Any]]) -> None:
-    payload = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "count": len(review_items),
-        "items": review_items,
-    }
+    payload = {"generated_at": datetime.now(timezone.utc).isoformat(), "count": len(review_items), "items": review_items}
     REVIEW_JSON_FILE.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     rows = ""
