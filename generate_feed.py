@@ -73,6 +73,45 @@ def make_session(config: dict[str, Any]) -> requests.Session:
     return session
 
 
+def decode_response_text(response: requests.Response) -> str:
+    """Decode response bytes defensively, preferring UTF-8 for AWS pages.
+
+    Some AWS documentation pages omit a charset, which can make requests fall
+    back to ISO-8859-1. UTF-8 Korean text then turns into mojibake such as
+    'ì ëí'. We decode from bytes and try UTF-8 before weak/default
+    encodings.
+    """
+
+    header_encoding = requests.utils.get_encoding_from_headers(response.headers)
+    weak_encodings = {"iso-8859-1", "latin-1", "windows-1252"}
+    candidates: list[str] = []
+
+    if header_encoding and header_encoding.lower() not in weak_encodings:
+        candidates.append(header_encoding)
+
+    candidates.append("utf-8")
+
+    if response.apparent_encoding:
+        candidates.append(response.apparent_encoding)
+    if header_encoding:
+        candidates.append(header_encoding)
+    if response.encoding:
+        candidates.append(response.encoding)
+
+    seen: set[str] = set()
+    for encoding in candidates:
+        normalized = encoding.lower()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        try:
+            return response.content.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+
+    return response.content.decode("utf-8", errors="replace")
+
+
 def parse_entry_datetime(entry: Any) -> datetime:
     for key in ("published", "updated", "created"):
         value = entry.get(key)
@@ -267,11 +306,12 @@ def fetch_html(session: requests.Session, url: str, timeout: int) -> tuple[str, 
         if response.status_code >= 400:
             return None
         content_type = response.headers.get("content-type", "")
-        if "html" not in content_type.lower() and len(response.text) < 500:
+        html_text = decode_response_text(response)
+        if "html" not in content_type.lower() and len(html_text) < 500:
             return None
-        if "Page Not Found" in response.text or "404 -" in response.text:
+        if "Page Not Found" in html_text or "404 -" in html_text:
             return None
-        return response.url, response.text
+        return response.url, html_text
     except Exception:
         return None
 
@@ -523,7 +563,7 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
             failures.append(f"{name}: feed fetch failed: {exc}")
             continue
 
-        parsed = feedparser.parse(response.text)
+        parsed = feedparser.parse(response.content)
         if parsed.bozo:
             failures.append(f"{name}: feed parse warning: {parsed.bozo_exception}")
 
