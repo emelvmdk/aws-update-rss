@@ -15,7 +15,6 @@ import requests
 import yaml
 from bs4 import BeautifulSoup
 
-
 ROOT = Path(__file__).parent
 PUBLIC_DIR = ROOT / "public"
 OUTPUT_FILE = PUBLIC_DIR / "feed.xml"
@@ -31,8 +30,7 @@ def clean_text(value: Any) -> str:
     text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", " ", text)
     text = html.unescape(text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def has_korean(value: Any) -> bool:
@@ -41,9 +39,7 @@ def has_korean(value: Any) -> bool:
 
 def truncate(value: str, limit: int) -> str:
     value = clean_text(value)
-    if len(value) <= limit:
-        return value
-    return value[: max(0, limit - 1)].rstrip() + "…"
+    return value if len(value) <= limit else value[: max(0, limit - 1)].rstrip() + "…"
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -58,58 +54,50 @@ def load_config() -> dict[str, Any]:
 def load_feeds() -> list[dict[str, Any]]:
     feeds: list[dict[str, Any]] = []
     for path in sorted(ROOT.glob("feeds*.yaml")):
-        data = load_yaml(path)
-        feeds.extend(data.get("feeds", []))
+        feeds.extend(load_yaml(path).get("feeds", []))
     return [feed for feed in feeds if feed.get("enabled", True)]
 
 
 def make_session(config: dict[str, Any]) -> requests.Session:
     session = requests.Session()
-    user_agent = config.get("fetch", {}).get(
-        "user_agent",
-        "aws-update-rss/1.0",
-    )
-    session.headers.update({"User-Agent": user_agent})
+    session.headers.update({"User-Agent": config.get("fetch", {}).get("user_agent", "aws-update-rss/1.0")})
     return session
 
 
-def decode_response_text(response: requests.Response) -> str:
-    """Decode response bytes defensively, preferring UTF-8 for AWS pages.
+def decode_response_text(response: Any) -> str:
+    content = getattr(response, "content", None)
+    if content is None:
+        return getattr(response, "text", "") or ""
+    if isinstance(content, str):
+        return content
 
-    Some AWS documentation pages omit a charset, which can make requests fall
-    back to ISO-8859-1. UTF-8 Korean text then turns into mojibake such as
-    'ì ëí'. We decode from bytes and try UTF-8 before weak/default
-    encodings.
-    """
-
-    header_encoding = requests.utils.get_encoding_from_headers(response.headers)
-    weak_encodings = {"iso-8859-1", "latin-1", "windows-1252"}
+    headers = getattr(response, "headers", {}) or {}
+    header_encoding = requests.utils.get_encoding_from_headers(headers)
+    response_encoding = getattr(response, "encoding", None)
+    apparent_encoding = getattr(response, "apparent_encoding", None)
+    weak = {"iso-8859-1", "latin-1", "windows-1252"}
     candidates: list[str] = []
-
-    if header_encoding and header_encoding.lower() not in weak_encodings:
+    if header_encoding and header_encoding.lower() not in weak:
         candidates.append(header_encoding)
-
     candidates.append("utf-8")
-
-    if response.apparent_encoding:
-        candidates.append(response.apparent_encoding)
-    if header_encoding:
-        candidates.append(header_encoding)
-    if response.encoding:
-        candidates.append(response.encoding)
+    candidates.extend(x for x in [apparent_encoding, header_encoding, response_encoding] if x)
 
     seen: set[str] = set()
     for encoding in candidates:
-        normalized = encoding.lower()
-        if normalized in seen:
+        key = encoding.lower()
+        if key in seen:
             continue
-        seen.add(normalized)
+        seen.add(key)
         try:
-            return response.content.decode(encoding)
+            return content.decode(encoding)
         except (LookupError, UnicodeDecodeError):
             continue
+    return content.decode("utf-8", errors="replace")
 
-    return response.content.decode("utf-8", errors="replace")
+
+def response_feed_content(response: Any) -> bytes | str:
+    content = getattr(response, "content", None)
+    return content if content is not None else (getattr(response, "text", "") or "")
 
 
 def parse_entry_datetime(entry: Any) -> datetime:
@@ -118,12 +106,9 @@ def parse_entry_datetime(entry: Any) -> datetime:
         if value:
             try:
                 dt = parsedate_to_datetime(value)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                return dt.astimezone(timezone.utc)
+                return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
             except Exception:
                 pass
-
     for key in ("published_parsed", "updated_parsed"):
         parsed = entry.get(key)
         if parsed:
@@ -131,20 +116,12 @@ def parse_entry_datetime(entry: Any) -> datetime:
                 return datetime(*parsed[:6], tzinfo=timezone.utc)
             except Exception:
                 pass
-
     return datetime.now(timezone.utc)
 
 
 def entry_text(entry: Any) -> str:
-    parts = [
-        entry.get("title", ""),
-        entry.get("summary", ""),
-        entry.get("description", ""),
-        entry.get("link", ""),
-    ]
-    tags = entry.get("tags") or []
-    for tag in tags:
-        parts.append(tag.get("term", ""))
+    parts = [entry.get("title", ""), entry.get("summary", ""), entry.get("description", ""), entry.get("link", "")]
+    parts.extend(tag.get("term", "") for tag in (entry.get("tags") or []))
     return clean_text(" ".join(str(part) for part in parts)).lower()
 
 
@@ -152,17 +129,10 @@ def keyword_matches(text: str, keyword: str) -> bool:
     keyword = keyword.strip()
     if not keyword:
         return False
-
     lower_text = text.lower()
     lower_keyword = keyword.lower()
-
-    # Short AWS acronyms like WAF, IAM, VPC, KMS, SCP, ALB, NLB, SSM,
-    # TGW, ACM, and VPN are noisy with substring matching. Use an
-    # alphanumeric boundary so characters embedded in another word do not match.
     if len(lower_keyword) <= 4 and re.fullmatch(r"[a-z0-9]+", lower_keyword):
-        pattern = rf"(?<![a-z0-9]){re.escape(lower_keyword)}(?![a-z0-9])"
-        return re.search(pattern, lower_text) is not None
-
+        return re.search(rf"(?<![a-z0-9]){re.escape(lower_keyword)}(?![a-z0-9])", lower_text) is not None
     return lower_keyword in lower_text
 
 
@@ -173,62 +143,39 @@ def matched_keywords(text: str, keywords: list[str]) -> list[str]:
 def should_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> tuple[bool, list[str]]:
     mode = feed.get("filter_mode", "all")
     text = entry_text(entry)
-
     if mode == "all":
         return True, []
 
     filter_config = config.get("what_new_filter", {})
-    exclude_keywords = filter_config.get("exclude_keywords", [])
-
-    if matched_keywords(text, exclude_keywords):
+    if matched_keywords(text, filter_config.get("exclude_keywords", [])):
         return False, []
 
-    # Stricter What’s New model:
-    # - always_include_keywords are precise enough to pass by themselves.
-    # - contextual_keywords are broad and must be paired with a relevance keyword
-    #   such as console, policy, route, endpoint, security, deprecation, or
-    #   behavior-change wording.
-    # - include_keywords remains as a backward-compatible fallback for simple configs.
     always_keywords = filter_config.get("always_include_keywords")
     contextual_keywords = filter_config.get("contextual_keywords")
     relevance_keywords = filter_config.get("relevance_keywords")
-
     if always_keywords is not None or contextual_keywords is not None:
         always_matches = matched_keywords(text, always_keywords or [])
         if always_matches:
             return True, always_matches
-
         contextual_matches = matched_keywords(text, contextual_keywords or [])
         relevance_matches = matched_keywords(text, relevance_keywords or [])
         if contextual_matches and relevance_matches:
             return True, contextual_matches + relevance_matches
-
         return False, []
 
-    include_keywords = filter_config.get("include_keywords", [])
-    matches = matched_keywords(text, include_keywords)
+    matches = matched_keywords(text, filter_config.get("include_keywords", []))
     return bool(matches), matches
 
 
 def _legacy_detect_severity_with_reasons(text: str, config: dict[str, Any]) -> tuple[str, list[str]]:
-    rules = config.get("severity_rules", {})
     for severity in ("high", "medium", "low"):
-        for keyword in rules.get(severity, []):
+        for keyword in config.get("severity_rules", {}).get(severity, []):
             if keyword_matches(text, keyword):
                 return severity.capitalize(), [f"legacy {severity}: {keyword}"]
     return "Low", ["default: no severity keyword matched"]
 
 
 def detect_severity_with_reasons(text: str, config: dict[str, Any]) -> tuple[str, list[str]]:
-    """Classify update priority from service criticality and change type.
-
-    The model is intentionally rule-based so that Slack alerts stay explainable:
-    critical services such as Control Tower, TGW, GWLB, endpoints, CloudWatch,
-    IAM, and security services stay at least Medium, while high-risk changes
-    such as console changes, deprecation, policy, security, guardrails, CVE,
-    or behavior changes elevate matching items to High.
-    """
-
     model = config.get("severity_model", {})
     if not model:
         return _legacy_detect_severity_with_reasons(text, config)
@@ -260,7 +207,6 @@ def detect_severity_with_reasons(text: str, config: dict[str, Any]) -> tuple[str
         return "Medium", reasons or ["medium change type matched"]
     if low_changes:
         return "Low", reasons or ["low signal matched"]
-
     return _legacy_detect_severity_with_reasons(text, config)
 
 
@@ -272,32 +218,22 @@ def detect_severity(text: str, config: dict[str, Any]) -> str:
 def localized_url_candidate(url: str, config: dict[str, Any]) -> str | None:
     if not url:
         return None
-
     parsed = urlparse(url)
     host = parsed.netloc.lower()
     path = parsed.path or "/"
-
     if host == "docs.aws.amazon.com":
         locale = config.get("localization", {}).get("preferred_docs_locale", "ko_kr")
-        parts = [part for part in path.split("/") if part]
-        if parts and parts[0] == locale:
-            return url
-        new_path = "/" + "/".join([locale] + parts)
-        if path.endswith("/") and not new_path.endswith("/"):
-            new_path += "/"
-        return urlunparse(parsed._replace(path=new_path))
-
-    if host == "aws.amazon.com":
+    elif host == "aws.amazon.com":
         locale = config.get("localization", {}).get("preferred_aws_site_locale", "ko")
-        parts = [part for part in path.split("/") if part]
-        if parts and parts[0] == locale:
-            return url
-        new_path = "/" + "/".join([locale] + parts)
-        if path.endswith("/") and not new_path.endswith("/"):
-            new_path += "/"
-        return urlunparse(parsed._replace(path=new_path))
-
-    return None
+    else:
+        return None
+    parts = [part for part in path.split("/") if part]
+    if parts and parts[0] == locale:
+        return url
+    new_path = "/" + "/".join([locale] + parts)
+    if path.endswith("/") and not new_path.endswith("/"):
+        new_path += "/"
+    return urlunparse(parsed._replace(path=new_path))
 
 
 def fetch_html(session: requests.Session, url: str, timeout: int) -> tuple[str, str] | None:
@@ -305,7 +241,8 @@ def fetch_html(session: requests.Session, url: str, timeout: int) -> tuple[str, 
         response = session.get(url, timeout=timeout, allow_redirects=True)
         if response.status_code >= 400:
             return None
-        content_type = response.headers.get("content-type", "")
+        headers = getattr(response, "headers", {}) or {}
+        content_type = headers.get("content-type", "")
         html_text = decode_response_text(response)
         if "html" not in content_type.lower() and len(html_text) < 500:
             return None
@@ -322,31 +259,19 @@ def extract_page_summary(html_doc: str, prefer_korean: bool = False) -> tuple[st
         tag.decompose()
 
     title_candidates: list[str] = []
-    for selector in [
-        'meta[property="og:title"]',
-        'meta[name="twitter:title"]',
-        "h1",
-        "title",
-    ]:
+    for selector in ['meta[property="og:title"]', 'meta[name="twitter:title"]', "h1", "title"]:
         node = soup.select_one(selector)
-        if not node:
-            continue
-        title = clean_text(node.get("content") if node.name == "meta" else node.get_text(" "))
-        if title and title not in title_candidates:
-            title_candidates.append(title)
-
+        if node:
+            title = clean_text(node.get("content") if node.name == "meta" else node.get_text(" "))
+            if title and title not in title_candidates:
+                title_candidates.append(title)
+    title = ""
     if prefer_korean:
         title = next((candidate for candidate in title_candidates if has_korean(candidate)), "")
-        title = title or (title_candidates[0] if title_candidates else "")
-    else:
-        title = title_candidates[0] if title_candidates else ""
+    title = title or (title_candidates[0] if title_candidates else "")
 
     description_candidates: list[str] = []
-    for selector in [
-        'meta[name="description"]',
-        'meta[property="og:description"]',
-        'meta[name="twitter:description"]',
-    ]:
+    for selector in ['meta[name="description"]', 'meta[property="og:description"]', 'meta[name="twitter:description"]']:
         node = soup.select_one(selector)
         if node:
             description = clean_text(node.get("content"))
@@ -374,25 +299,14 @@ def extract_page_summary(html_doc: str, prefer_korean: bool = False) -> tuple[st
             summary = description_candidates[0] if description_candidates else " ".join(paragraphs[:2])
     else:
         summary = description_candidates[0] if description_candidates else " ".join(paragraphs[:2])
-
     return title, summary
 
 
 def _page_payload(url: str, language: str, title: str, summary: str) -> dict[str, str]:
-    return {
-        "url": url,
-        "language": language,
-        "title": title,
-        "summary": summary,
-    }
+    return {"url": url, "language": language, "title": title, "summary": summary}
 
 
-def fetch_page_payload(
-    session: requests.Session,
-    url: str,
-    language: str,
-    timeout: int,
-) -> dict[str, str] | None:
+def fetch_page_payload(session: requests.Session, url: str, language: str, timeout: int) -> dict[str, str] | None:
     fetched = fetch_html(session, url, timeout)
     if not fetched:
         return None
@@ -406,29 +320,13 @@ def fetch_page_payload(
     return _page_payload(final_url or url, language, page_title, page_summary)
 
 
-def enrich_entry(
-    session: requests.Session,
-    entry: Any,
-    feed: dict[str, Any],
-    config: dict[str, Any],
-) -> dict[str, str]:
-    """Enrich an RSS entry.
-
-    The original English RSS entry and original link are always treated as the
-    source of truth. The English page is checked first. A Korean page is used
-    only as a display/localization layer when it exists. If Korean localization
-    is missing, the English source page is returned.
-    """
-
+def enrich_entry(session: requests.Session, entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> dict[str, str]:
     timeout = int(config.get("fetch", {}).get("timeout_seconds", 20))
     original_link = entry.get("link", "")
     rss_title = clean_text(entry.get("title", "Untitled"))
     rss_summary = clean_text(entry.get("summary", entry.get("description", "")))
 
-    english_payload: dict[str, str] | None = None
-    if original_link:
-        english_payload = fetch_page_payload(session, original_link, "en source", timeout)
-
+    english_payload = fetch_page_payload(session, original_link, "en source", timeout) if original_link else None
     source_link = english_payload["url"] if english_payload else original_link
     source_title = english_payload["title"] if english_payload and english_payload["title"] else rss_title
     source_summary = english_payload["summary"] if english_payload and english_payload["summary"] else rss_summary
@@ -472,37 +370,27 @@ def enrich_entry(
         "rss_summary": rss_summary,
         "source_link": original_link,
         "source_title": rss_title,
-        "source_summary": rss_summary,
+        "source_summary": source_summary,
         "source_language": "en rss source",
     }
 
 
-def build_korean_summary(
-    title: str,
-    source_name: str,
-    category: str,
-    severity: str,
-    detail: str,
-    config: dict[str, Any],
-) -> str:
-    category_hints = config.get("category_hints", {})
-    hint = category_hints.get(category, "서비스 변경 내용과 운영 영향 여부를 확인하세요.")
+def build_korean_summary(title: str, source_name: str, category: str, severity: str, detail: str, config: dict[str, Any]) -> str:
+    hint = config.get("category_hints", {}).get(category, "서비스 변경 내용과 운영 영향 여부를 확인하세요.")
     title_part = f"제목은 '{title}'입니다." if title else "새 업데이트가 감지되었습니다."
     detail_part = f" 주요 내용: {truncate(detail, 220)}" if detail else ""
     return f"{source_name}에 새 AWS 업데이트가 있습니다. {title_part} 중요도는 {severity}로 분류했습니다. {hint}{detail_part}"
 
 
 def make_guid(feed_name: str, entry: Any) -> str:
-    raw = "|".join(
-        [
-            feed_name,
-            clean_text(entry.get("id", "")),
-            clean_text(entry.get("guid", "")),
-            clean_text(entry.get("link", "")),
-            clean_text(entry.get("title", "")),
-            clean_text(entry.get("published", entry.get("updated", ""))),
-        ]
-    )
+    raw = "|".join([
+        feed_name,
+        clean_text(entry.get("id", "")),
+        clean_text(entry.get("guid", "")),
+        clean_text(entry.get("link", "")),
+        clean_text(entry.get("title", "")),
+        clean_text(entry.get("published", entry.get("updated", ""))),
+    ])
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
@@ -521,15 +409,12 @@ def item_to_rss_description(
     source_summary: str | None = None,
     severity_reasons: list[str] | None = None,
 ) -> str:
-    summary_config = config.get("summary", {})
-    max_detail_chars = int(summary_config.get("max_detail_chars", 900))
+    max_detail_chars = int(config.get("summary", {}).get("max_detail_chars", 900))
     detail = page_summary or source_summary or rss_summary
-
     lines = []
-
-    if summary_config.get("include_severity", True):
+    if config.get("summary", {}).get("include_severity", True):
         lines.append(f"<p><strong>중요도</strong>: {html.escape(severity)}</p>")
-    if summary_config.get("include_severity_reasons", True) and severity_reasons:
+    if config.get("summary", {}).get("include_severity_reasons", True) and severity_reasons:
         lines.append(f"<p><strong>판단 근거</strong>: {html.escape(', '.join(severity_reasons))}</p>")
     if detail:
         lines.append(f"<p><strong>요약</strong>: {html.escape(truncate(detail, max_detail_chars))}</p>")
@@ -537,7 +422,6 @@ def item_to_rss_description(
         lines.append(f"<p><strong>링크</strong>: <a href=\"{html.escape(link)}\">{html.escape(link)}</a></p>")
     if source_link and source_link != link:
         lines.append(f"<p><strong>영어 원문 링크</strong>: <a href=\"{html.escape(source_link)}\">{html.escape(source_link)}</a></p>")
-
     return "\n".join(lines)
 
 
@@ -546,8 +430,7 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
     timeout = int(config.get("fetch", {}).get("timeout_seconds", 20))
     failures: list[str] = []
     items: list[dict[str, Any]] = []
-    max_age_days = int(config.get("output", {}).get("max_age_days", 30))
-    cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=int(config.get("output", {}).get("max_age_days", 30)))
 
     for feed in feeds:
         name = feed.get("name", "Unnamed feed")
@@ -555,7 +438,6 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
         if not url:
             failures.append(f"{name}: missing URL")
             continue
-
         try:
             response = session.get(url, timeout=timeout)
             response.raise_for_status()
@@ -563,7 +445,7 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
             failures.append(f"{name}: feed fetch failed: {exc}")
             continue
 
-        parsed = feedparser.parse(response.content)
+        parsed = feedparser.parse(response_feed_content(response))
         if parsed.bozo:
             failures.append(f"{name}: feed parse warning: {parsed.bozo_exception}")
 
@@ -571,7 +453,6 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
             published_at = parse_entry_datetime(entry)
             if published_at < cutoff:
                 continue
-
             included, matches = should_include(entry, feed, config)
             if not included:
                 continue
@@ -580,16 +461,14 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
             source_name = name
             category = feed.get("category", "general")
             title = enriched["title"] or clean_text(entry.get("title", "Untitled"))
-            combined_text = " ".join(
-                [
-                    title,
-                    enriched.get("page_summary", ""),
-                    enriched.get("rss_summary", ""),
-                    enriched.get("source_summary", ""),
-                    source_name,
-                    category,
-                ]
-            )
+            combined_text = " ".join([
+                title,
+                enriched.get("page_summary", ""),
+                enriched.get("rss_summary", ""),
+                enriched.get("source_summary", ""),
+                source_name,
+                category,
+            ])
             severity, severity_reasons = detect_severity_with_reasons(combined_text, config)
             description = item_to_rss_description(
                 title=title,
@@ -606,45 +485,32 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
                 source_summary=enriched.get("source_summary"),
                 severity_reasons=severity_reasons,
             )
+            items.append({
+                "title": f"[{category}] {title}",
+                "link": enriched["link"] or entry.get("link", ""),
+                "guid": make_guid(source_name, entry),
+                "published_at": published_at,
+                "description": description,
+                "source": source_name,
+                "category": category,
+                "severity": severity,
+                "severity_reasons": severity_reasons,
+            })
 
-            items.append(
-                {
-                    "title": f"[{category}] {title}",
-                    "link": enriched["link"] or entry.get("link", ""),
-                    "guid": make_guid(source_name, entry),
-                    "published_at": published_at,
-                    "description": description,
-                    "source": source_name,
-                    "category": category,
-                    "severity": severity,
-                    "severity_reasons": severity_reasons,
-                }
-            )
-
-    deduped: dict[str, dict[str, Any]] = {}
-    for item in items:
-        deduped[item["guid"]] = item
-
-    sorted_items = sorted(
-        deduped.values(),
-        key=lambda item: item["published_at"],
-        reverse=True,
-    )
-    max_items = int(config.get("output", {}).get("max_items", 100))
-    return sorted_items[:max_items], failures
+    deduped = {item["guid"]: item for item in items}
+    sorted_items = sorted(deduped.values(), key=lambda item: item["published_at"], reverse=True)
+    return sorted_items[: int(config.get("output", {}).get("max_items", 100))], failures
 
 
 def build_rss(config: dict[str, Any], items: list[dict[str, Any]]) -> str:
     output = config.get("output", {})
     rss = ET.Element("rss", version="2.0")
     channel = ET.SubElement(rss, "channel")
-
     ET.SubElement(channel, "title").text = output.get("title", "AWS Update RSS")
     ET.SubElement(channel, "link").text = output.get("link", "https://aws.amazon.com/new/")
     ET.SubElement(channel, "description").text = output.get("description", "Filtered AWS updates")
     ET.SubElement(channel, "language").text = output.get("language", "ko-KR")
     ET.SubElement(channel, "lastBuildDate").text = format_datetime(datetime.now(timezone.utc))
-
     for item_data in items:
         item = ET.SubElement(channel, "item")
         ET.SubElement(item, "title").text = item_data["title"]
@@ -653,20 +519,14 @@ def build_rss(config: dict[str, Any], items: list[dict[str, Any]]) -> str:
         ET.SubElement(item, "pubDate").text = format_datetime(item_data["published_at"])
         ET.SubElement(item, "description").text = item_data["description"]
         ET.SubElement(item, "category").text = item_data["category"]
-
     return ET.tostring(rss, encoding="utf-8", xml_declaration=True).decode("utf-8")
 
 
 def write_index(items: list[dict[str, Any]]) -> None:
     latest = ""
     for item in items[:20]:
-        latest += (
-            f"<li><strong>{html.escape(item['severity'])}</strong> "
-            f"<a href=\"{html.escape(item['link'])}\">{html.escape(item['title'])}</a> "
-            f"<small>{html.escape(item['published_at'].isoformat())}</small></li>"
-        )
-    INDEX_FILE.write_text(
-        f"""<!doctype html>
+        latest += f"<li><strong>{html.escape(item['severity'])}</strong> <a href=\"{html.escape(item['link'])}\">{html.escape(item['title'])}</a> <small>{html.escape(item['published_at'].isoformat())}</small></li>"
+    INDEX_FILE.write_text(f"""<!doctype html>
 <html lang=\"ko\">
 <head><meta charset=\"utf-8\"><title>AWS Update RSS</title></head>
 <body>
@@ -677,19 +537,13 @@ def write_index(items: list[dict[str, Any]]) -> None:
   <p>Status: <a href=\"./status.html\">status.html</a></p>
 </body>
 </html>
-""",
-        encoding="utf-8",
-    )
+""", encoding="utf-8")
 
 
 def write_status(items: list[dict[str, Any]], failures: list[str], feeds: list[dict[str, Any]]) -> None:
     failure_html = "".join(f"<li>{html.escape(failure)}</li>" for failure in failures) or "<li>No failures</li>"
-    feed_html = "".join(
-        f"<li>{html.escape(feed.get('name', 'Unnamed'))} - {html.escape(feed.get('category', 'general'))}</li>"
-        for feed in feeds
-    )
-    STATUS_FILE.write_text(
-        f"""<!doctype html>
+    feed_html = "".join(f"<li>{html.escape(feed.get('name', 'Unnamed'))} - {html.escape(feed.get('category', 'general'))}</li>" for feed in feeds)
+    STATUS_FILE.write_text(f"""<!doctype html>
 <html lang=\"ko\">
 <head><meta charset=\"utf-8\"><title>AWS Update RSS Status</title></head>
 <body>
@@ -703,21 +557,17 @@ def write_status(items: list[dict[str, Any]], failures: list[str], feeds: list[d
   <ul>{feed_html}</ul>
 </body>
 </html>
-""",
-        encoding="utf-8",
-    )
+""", encoding="utf-8")
 
 
 def main() -> None:
     config = load_config()
     feeds = load_feeds()
     items, failures = collect_items(config, feeds)
-
     PUBLIC_DIR.mkdir(exist_ok=True)
     OUTPUT_FILE.write_text(build_rss(config, items), encoding="utf-8")
     write_index(items)
     write_status(items, failures, feeds)
-
     print(f"Generated {OUTPUT_FILE} with {len(items)} items from {len(feeds)} feeds.")
     if failures:
         print("Warnings:")
