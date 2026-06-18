@@ -52,6 +52,21 @@ what_new_filter:
     - Network Firewall
     - Route 53
     - Resolver
+    - VPC IPAM
+    - IPAM
+    - AWS Network Manager
+    - Network Manager
+    - Reachability Analyzer
+    - Network Access Analyzer
+    - Traffic Mirroring
+    - VPC Flow Logs
+    - NAT Gateway
+    - Internet Gateway
+    - Egress-only Internet Gateway
+    - Elastic IP
+    - Prefix List
+    - Managed Prefix List
+    - VPC Lattice
     - CloudFront
     - Load Balancer
     - Elastic Load Balancing
@@ -62,6 +77,18 @@ what_new_filter:
     - Security Hub
     - GuardDuty
     - Inspector
+    - IAM Access Analyzer
+    - Access Analyzer
+    - AWS Secrets Manager
+    - Secrets Manager
+    - AWS Certificate Manager
+    - ACM
+    - AWS Audit Manager
+    - Audit Manager
+    - Amazon Macie
+    - Macie
+    - AWS Detective
+    - Detective
     - AWS Config
     - AWS Control Tower
     - Control Tower
@@ -92,6 +119,18 @@ what_new_filter:
     - EventBridge
     - Systems Manager
     - SSM
+    - Incident Manager
+    - Change Manager
+    - Resource Explorer
+    - Trusted Advisor
+    - Well-Architected Tool
+    - AWS Health
+    - AWS Personal Health Dashboard
+    - Service Quotas
+    - AWS CloudFormation
+    - CloudFormation
+    - AWS Service Catalog
+    - Service Catalog
     - Bedrock
     - Amazon Bedrock
     - Bedrock Guardrails
@@ -121,8 +160,12 @@ severity_model:
     - KMS
     - CloudTrail
     - AWS Config
+    - AWS CloudFormation
+    - CloudFormation
+    - AWS Service Catalog
+    - Service Catalog
 
-    # Security
+    # Security / identity / compliance
     - Security Hub
     - GuardDuty
     - Inspector
@@ -131,8 +174,18 @@ severity_model:
     - WAF
     - Shield
     - Firewall Manager
+    - IAM Access Analyzer
+    - Access Analyzer
+    - AWS Secrets Manager
+    - Secrets Manager
+    - AWS Certificate Manager
+    - ACM
+    - AWS Audit Manager
+    - Audit Manager
+    - Amazon Macie
+    - Macie
 
-    # Core networking / inspection path
+    # Core networking / inspection path / troubleshooting
     - VPC
     - Transit Gateway
     - TGW
@@ -151,13 +204,30 @@ severity_model:
     - GWLB
     - Gateway Load Balancer Endpoint
     - GWLBe
+    - VPC IPAM
+    - IPAM
+    - AWS Network Manager
+    - Network Manager
+    - Reachability Analyzer
+    - Network Access Analyzer
+    - Traffic Mirroring
+    - VPC Flow Logs
+    - NAT Gateway
+    - Internet Gateway
+    - Egress-only Internet Gateway
+    - Elastic IP
+    - Prefix List
+    - Managed Prefix List
 
-    # Operations / observability
+    # Operations / observability / account health
     - CloudWatch
     - CloudWatch Logs
     - Application Signals
     - Internet Monitor
     - Network Flow Monitor
+    - AWS Health
+    - AWS Personal Health Dashboard
+    - Service Quotas
 
   important_services:
     - Amazon Bedrock
@@ -168,6 +238,8 @@ severity_model:
     - EventBridge
     - Systems Manager
     - SSM
+    - Incident Manager
+    - Change Manager
     - AWS Backup
     - Backup
     - Resilience Hub
@@ -182,8 +254,23 @@ severity_model:
     - NLB
     - Network Load Balancer
     - Verified Access
+    - VPC Lattice
+    - AWS Detective
+    - Detective
+    - AWS Resource Explorer
+    - Resource Explorer
+    - AWS Trusted Advisor
+    - Trusted Advisor
+    - AWS Well-Architected Tool
+    - Well-Architected Tool
 
   high_change_types:
+    - console
+    - dashboard
+    - console experience
+    - dashboard experience
+    - new console
+    - console navigation
     - security
     - vulnerability
     - CVE
@@ -217,8 +304,6 @@ severity_model:
     - organizational unit
 
   medium_change_types:
-    - console
-    - dashboard
     - generally available
     - new capability
     - new capabilities
@@ -242,6 +327,8 @@ severity_model:
 
 severity_rules:
   high:
+    - console
+    - dashboard
     - security
     - vulnerability
     - CVE
@@ -270,6 +357,11 @@ severity_rules:
     - WAF
     - Shield
     - Firewall Manager
+    - IAM Access Analyzer
+    - AWS Secrets Manager
+    - AWS Certificate Manager
+    - AWS Audit Manager
+    - Amazon Macie
     - Bedrock Guardrails
   medium:
     - CloudWatch
@@ -287,14 +379,24 @@ severity_rules:
     - Verified Access
     - VPN
     - VPC
+    - VPC IPAM
+    - AWS Network Manager
+    - Reachability Analyzer
+    - Network Access Analyzer
+    - Traffic Mirroring
+    - VPC Flow Logs
+    - NAT Gateway
+    - Internet Gateway
+    - AWS Health
+    - Service Quotas
+    - CloudFormation
+    - Service Catalog
     - EventBridge
     - Systems Manager
     - SSM
     - Bedrock
     - Amazon Bedrock
   low:
-    - console
-    - dashboard
     - documentation
     - guide
 
