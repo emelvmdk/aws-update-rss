@@ -1,0 +1,36 @@
+feeds:
+  - name: "Gateway Load Balancer Updates"
+    url: "https://docs.aws.amazon.com/elasticloadbalancing/latest/gateway/elb-gateway.rss"
+    category: "inspection"
+    filter_mode: "all"
+    enabled: true
+  - name: "Network Firewall Developer Guide Updates"
+    url: "https://docs.aws.amazon.com/network-firewall/latest/developerguide/network-firewall-developer-guide.rss"
+    category: "inspection"
+    filter_mode: "all"
+    enabled: true
+  - name: "AWS PrivateLink Updates"
+    url: "https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-updates.rss"
+    category: "privatelink"
+    filter_mode: "all"
+    enabled: true
+  - name: "Site-to-Site VPN User Guide Updates"
+    url: "https://docs.aws.amazon.com/vpn/latest/s2svpn/s2s-vpn-user-guide.rss"
+    category: "hybrid-networking"
+    filter_mode: "all"
+    enabled: true
+  - name: "AWS Direct Connect Release Notes"
+    url: "https://docs.aws.amazon.com/directconnect/latest/UserGuide/direct-connect-release-notes.rss"
+    category: "hybrid-networking"
+    filter_mode: "all"
+    enabled: true
+  - name: "Amazon VPC Release Notes"
+    url: "https://docs.aws.amazon.com/vpc/latest/userguide/amazon-vpc-release-notes.rss"
+    category: "networking"
+    filter_mode: "all"
+    enabled: true
+  - name: "Transit Gateway Release Notes"
+    url: "https://docs.aws.amazon.com/vpc/latest/tgw/transit-gateway-release-notes.rss"
+    category: "networking"
+    filter_mode: "all"
+    enabled: true
