@@ -9,6 +9,7 @@ from generate_feed import (
     build_rss,
     clean_text,
     detect_severity,
+    detect_severity_with_reasons,
     extract_page_summary,
     item_to_rss_description,
     localized_url_candidate,
@@ -49,6 +50,37 @@ BASE_CONFIG = {
     "category_hints": {
         "whats-new": "신규 기능 영향 여부를 확인하세요.",
         "networking": "네트워크 영향 여부를 확인하세요.",
+    },
+}
+
+
+SERVICE_AWARE_CONFIG = {
+    **BASE_CONFIG,
+    "severity_model": {
+        "critical_services": [
+            "CloudWatch",
+            "Control Tower",
+            "Landing Zone",
+            "Gateway Load Balancer",
+            "GWLB",
+            "Gateway Load Balancer Endpoint",
+            "GWLBe",
+            "VPC Endpoint",
+            "Endpoint Service",
+        ],
+        "important_services": ["Amazon Bedrock", "Bedrock"],
+        "high_change_types": [
+            "security",
+            "policy",
+            "landing zone",
+            "route table",
+            "appliance mode",
+            "health check",
+            "failover",
+            "Bedrock Guardrails",
+        ],
+        "medium_change_types": ["console", "dashboard", "new capability", "generally available"],
+        "low_change_types": ["documentation", "guide"],
     },
 }
 
@@ -134,6 +166,33 @@ def test_detect_severity_uses_high_before_medium() -> None:
     assert detect_severity("console guide update", BASE_CONFIG) == "Low"
 
 
+def test_service_aware_severity_keeps_critical_console_updates_medium() -> None:
+    severity, reasons = detect_severity_with_reasons(
+        "Amazon CloudWatch console experience update",
+        SERVICE_AWARE_CONFIG,
+    )
+
+    assert severity == "Medium"
+    assert "critical service: CloudWatch" in reasons
+    assert "medium change: console" in reasons
+
+
+def test_service_aware_severity_elevates_control_tower_and_gwlb_path_changes() -> None:
+    control_tower_severity, control_tower_reasons = detect_severity_with_reasons(
+        "AWS Control Tower landing zone and account factory policy update",
+        SERVICE_AWARE_CONFIG,
+    )
+    gwlb_severity, gwlb_reasons = detect_severity_with_reasons(
+        "Gateway Load Balancer Endpoint route table and appliance mode update",
+        SERVICE_AWARE_CONFIG,
+    )
+
+    assert control_tower_severity == "High"
+    assert any("Control Tower" in reason for reason in control_tower_reasons)
+    assert gwlb_severity == "High"
+    assert any("Gateway Load Balancer" in reason for reason in gwlb_reasons)
+
+
 def test_matched_keywords_is_case_insensitive() -> None:
     assert matched_keywords("amazon cloudwatch update", ["CloudWatch"]) == ["CloudWatch"]
 
@@ -186,6 +245,25 @@ def test_item_to_rss_description_contains_fallback_language_and_link() -> None:
     assert "CloudWatch" in description
     assert "https://aws.amazon.com/example" in description
     assert "요약" in description
+
+
+def test_item_to_rss_description_can_include_severity_reasons() -> None:
+    description = item_to_rss_description(
+        title="CloudWatch console update",
+        source_name="AWS What's New Filtered",
+        category="whats-new",
+        severity="Medium",
+        language="en fallback",
+        matched=["CloudWatch"],
+        page_summary="",
+        rss_summary="CloudWatch console update",
+        link="https://aws.amazon.com/example",
+        config={**BASE_CONFIG, "summary": {**BASE_CONFIG["summary"], "include_severity_reasons": True}},
+        severity_reasons=["critical service: CloudWatch", "medium change: console"],
+    )
+
+    assert "판단 근거" in description
+    assert "critical service: CloudWatch" in description
 
 
 def test_build_rss_outputs_valid_xml() -> None:
