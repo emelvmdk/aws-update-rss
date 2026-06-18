@@ -274,7 +274,7 @@ def test_make_guid_is_stable_for_same_entry() -> None:
     assert make_guid("feed", entry) == make_guid("feed", entry)
 
 
-def test_item_to_rss_description_contains_fallback_language_and_link() -> None:
+def test_item_to_rss_description_is_compact_for_slack() -> None:
     description = item_to_rss_description(
         title="Example update",
         source_name="AWS What's New Filtered",
@@ -288,10 +288,16 @@ def test_item_to_rss_description_contains_fallback_language_and_link() -> None:
         config=BASE_CONFIG,
     )
 
-    assert "en fallback" in description
-    assert "CloudWatch" in description
-    assert "https://aws.amazon.com/example" in description
+    assert "중요도" in description
     assert "요약" in description
+    assert "English fallback summary" in description
+    assert "https://aws.amazon.com/example" in description
+    assert "운영 판단" not in description
+    assert "확인할 것" not in description
+    assert "표시 언어" not in description
+    assert "매칭 키워드" not in description
+    assert "출처" not in description
+    assert "분류" not in description
 
 
 def test_item_to_rss_description_can_include_severity_reasons() -> None:
@@ -312,6 +318,8 @@ def test_item_to_rss_description_can_include_severity_reasons() -> None:
     assert "판단 근거" in description
     assert "critical service: CloudWatch" in description
     assert "high change: console" in description
+    assert "운영 판단" not in description
+    assert "확인할 것" not in description
 
 
 def test_build_rss_outputs_valid_xml() -> None:
