@@ -178,24 +178,42 @@ def test_whats_new_filter_uses_english_source_entry_text() -> None:
         "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/cloudwatch-example/",
     }
 
-    included, matches = should_include(entry, {"filter_mode": "keyword"}, CONFIG)
+    included, matches = should_include(entry, {"filter_mode": "keyword", "category": "whats-new"}, CONFIG)
 
     assert included is True
     assert matches == ["CloudWatch"]
 
 
-def test_url_hint_skipped_candidate_keeps_review_reason() -> None:
+def test_url_hint_skipped_candidate_keeps_review_reason_for_whats_new() -> None:
     entry = {
         "title": "Amazon CloudWatch announces Log Analytics",
         "summary": "CloudWatch Logs Insights and Live Tail are unified.",
         "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/console-experience-update/",
     }
 
-    included, matches, reason = evaluate_include(entry, {"filter_mode": "keyword"}, CONFIG)
+    included, matches, reason = evaluate_include(entry, {"filter_mode": "keyword", "category": "whats-new"}, CONFIG)
 
     assert included is False
     assert matches == ["CloudWatch"]
     assert reason == URL_HINT_SKIP_REASON
+
+
+def test_fsi_and_architecture_do_not_require_url_hint_by_default() -> None:
+    entry = {
+        "title": "Amazon CloudWatch announces Log Analytics",
+        "summary": "CloudWatch Logs Insights and Live Tail are unified.",
+        "link": "https://aws.amazon.com/blogs/architecture/centralized-observability-pattern/",
+    }
+
+    fsi_included, fsi_matches, fsi_reason = evaluate_include(entry, {"filter_mode": "keyword", "category": "fsi"}, CONFIG)
+    arch_included, arch_matches, arch_reason = evaluate_include(entry, {"filter_mode": "keyword", "category": "architecture"}, CONFIG)
+
+    assert fsi_included is True
+    assert fsi_matches == ["CloudWatch"]
+    assert fsi_reason == ""
+    assert arch_included is True
+    assert arch_matches == ["CloudWatch"]
+    assert arch_reason == ""
 
 
 def test_whats_new_exclude_keywords_win_even_when_included_keyword_exists() -> None:
@@ -205,7 +223,7 @@ def test_whats_new_exclude_keywords_win_even_when_included_keyword_exists() -> N
         "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/healthomics-example/",
     }
 
-    included, matches = should_include(entry, {"filter_mode": "keyword"}, CONFIG)
+    included, matches = should_include(entry, {"filter_mode": "keyword", "category": "whats-new"}, CONFIG)
 
     assert included is False
     assert matches == []
