@@ -145,7 +145,7 @@ severity_rules:
     - guide
 
 category_hints:
-  whats-new: ""
+  whats-new: "신규 기능, 콘솔 경험, 리전 확장 또는 서비스 동작 변경 여부를 확인하세요."
   networking: "라우팅, 연결성, 하이브리드 네트워크, 보안 검사 경로에 영향이 있는지 확인하세요."
   hybrid-networking: "온프레미스 연동, BGP, 터널, 전용선 연결 영향 여부를 확인하세요."
   inspection: "방화벽, GWLB, Network Firewall, inspection path의 정책 또는 라우팅 영향 여부를 확인하세요."
