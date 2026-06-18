@@ -4,10 +4,12 @@ from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
 
 import pytest
+from requests import Response
 
 from generate_feed import (
     build_rss,
     clean_text,
+    decode_response_text,
     detect_severity,
     detect_severity_with_reasons,
     extract_page_summary,
@@ -121,8 +123,27 @@ SERVICE_AWARE_CONFIG = {
 }
 
 
+def response_with_content(content: bytes, content_type: str = "text/html") -> Response:
+    response = Response()
+    response.status_code = 200
+    response._content = content
+    response.headers["content-type"] = content_type
+    return response
+
+
 def test_clean_text_removes_html_and_normalizes_spaces() -> None:
     assert clean_text("<p>Hello&nbsp; <strong>AWS</strong></p>\n") == "Hello AWS"
+
+
+def test_decode_response_text_prefers_utf8_for_korean_pages() -> None:
+    expected = "AWS Backup 개발자 가이드의 개정 날짜"
+    response = response_with_content(expected.encode("utf-8"))
+    response.encoding = "ISO-8859-1"
+
+    decoded = decode_response_text(response)
+
+    assert decoded == expected
+    assert "ì" not in decoded
 
 
 def test_truncate_adds_ellipsis_when_too_long() -> None:
