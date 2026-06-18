@@ -231,45 +231,88 @@ def extract_page_summary(html_doc: str) -> tuple[str, str]:
     return title, summary
 
 
+def _page_payload(url: str, language: str, title: str, summary: str) -> dict[str, str]:
+    return {
+        "url": url,
+        "language": language,
+        "title": title,
+        "summary": summary,
+    }
+
+
+def fetch_page_payload(
+    session: requests.Session,
+    url: str,
+    language: str,
+    timeout: int,
+) -> dict[str, str] | None:
+    fetched = fetch_html(session, url, timeout)
+    if not fetched:
+        return None
+    final_url, html_doc = fetched
+    page_title, page_summary = extract_page_summary(html_doc)
+    if not page_title and not page_summary:
+        return None
+    return _page_payload(final_url or url, language, page_title, page_summary)
+
+
 def enrich_entry(
     session: requests.Session,
     entry: Any,
     feed: dict[str, Any],
     config: dict[str, Any],
 ) -> dict[str, str]:
+    """Enrich an RSS entry.
+
+    The original English RSS entry and original link are always treated as the
+    source of truth. The English page is checked first. A Korean page is used
+    only as a display/localization layer when it exists. If Korean localization
+    is missing, the English source page is returned.
+    """
+
     timeout = int(config.get("fetch", {}).get("timeout_seconds", 20))
     original_link = entry.get("link", "")
     rss_title = clean_text(entry.get("title", "Untitled"))
     rss_summary = clean_text(entry.get("summary", entry.get("description", "")))
 
-    candidates: list[tuple[str, str]] = []
+    english_payload: dict[str, str] | None = None
+    if original_link:
+        english_payload = fetch_page_payload(session, original_link, "en source", timeout)
+
+    source_link = english_payload["url"] if english_payload else original_link
+    source_title = english_payload["title"] if english_payload and english_payload["title"] else rss_title
+    source_summary = english_payload["summary"] if english_payload and english_payload["summary"] else rss_summary
+
     if config.get("localization", {}).get("enabled", True):
         localized = localized_url_candidate(original_link, config)
-        if localized:
-            lang = "ko" if "aws.amazon.com/ko/" in localized else "ko_kr"
-            candidates.append((localized, lang))
+        if localized and localized != original_link:
+            language = "ko" if "aws.amazon.com/ko/" in localized else "ko_kr"
+            localized_payload = fetch_page_payload(session, localized, language, timeout)
+            if localized_payload:
+                return {
+                    "link": localized_payload["url"],
+                    "language": language,
+                    "title": localized_payload["title"] or source_title,
+                    "page_summary": localized_payload["summary"],
+                    "rss_summary": rss_summary,
+                    "source_link": source_link,
+                    "source_title": source_title,
+                    "source_summary": source_summary,
+                    "source_language": "en source",
+                }
 
-    if config.get("localization", {}).get("fallback_to_original", True):
-        candidates.append((original_link, "en fallback"))
-
-    seen_urls: set[str] = set()
-    for candidate_url, language in candidates:
-        if not candidate_url or candidate_url in seen_urls:
-            continue
-        seen_urls.add(candidate_url)
-        fetched = fetch_html(session, candidate_url, timeout)
-        if not fetched:
-            continue
-        final_url, html_doc = fetched
-        page_title, page_summary = extract_page_summary(html_doc)
-        if page_title or page_summary:
-            return {
-                "link": final_url or candidate_url,
-                "language": language,
-                "title": page_title or rss_title,
-                "page_summary": page_summary,
-                "rss_summary": rss_summary,
-            }
+    if english_payload:
+        return {
+            "link": english_payload["url"],
+            "language": "en fallback",
+            "title": english_payload["title"] or rss_title,
+            "page_summary": english_payload["summary"],
+            "rss_summary": rss_summary,
+            "source_link": source_link,
+            "source_title": source_title,
+            "source_summary": source_summary,
+            "source_language": "en source",
+        }
 
     return {
         "link": original_link,
@@ -277,6 +320,10 @@ def enrich_entry(
         "title": rss_title,
         "page_summary": "",
         "rss_summary": rss_summary,
+        "source_link": original_link,
+        "source_title": rss_title,
+        "source_summary": rss_summary,
+        "source_language": "en rss source",
     }
 
 
@@ -320,10 +367,12 @@ def item_to_rss_description(
     rss_summary: str,
     link: str,
     config: dict[str, Any],
+    source_link: str | None = None,
+    source_summary: str | None = None,
 ) -> str:
     summary_config = config.get("summary", {})
     max_detail_chars = int(summary_config.get("max_detail_chars", 900))
-    detail = page_summary or rss_summary
+    detail = page_summary or source_summary or rss_summary
     korean_summary = build_korean_summary(title, source_name, category, severity, detail, config)
 
     lines = [
@@ -335,7 +384,8 @@ def item_to_rss_description(
     if summary_config.get("include_severity", True):
         lines.append(f"<p><strong>중요도</strong>: {html.escape(severity)}</p>")
     if summary_config.get("include_language_status", True):
-        lines.append(f"<p><strong>언어</strong>: {html.escape(language)}</p>")
+        lines.append(f"<p><strong>표시 언어</strong>: {html.escape(language)}</p>")
+        lines.append("<p><strong>업데이트 기준</strong>: English source feed/page</p>")
     if summary_config.get("include_matched_keywords", True) and matched:
         lines.append(f"<p><strong>매칭 키워드</strong>: {html.escape(', '.join(matched))}</p>")
 
@@ -343,9 +393,13 @@ def item_to_rss_description(
         lines.append(f"<p><strong>상세</strong>: {html.escape(truncate(detail, max_detail_chars))}</p>")
     if rss_summary and rss_summary != detail:
         lines.append(f"<p><strong>RSS 원문 설명</strong>: {html.escape(truncate(rss_summary, max_detail_chars))}</p>")
+    if source_summary and source_summary not in (detail, rss_summary):
+        lines.append(f"<p><strong>영어 원문 요약</strong>: {html.escape(truncate(source_summary, max_detail_chars))}</p>")
 
     if link:
-        lines.append(f"<p><strong>원문</strong>: <a href=\"{html.escape(link)}\">{html.escape(link)}</a></p>")
+        lines.append(f"<p><strong>표시 링크</strong>: <a href=\"{html.escape(link)}\">{html.escape(link)}</a></p>")
+    if source_link and source_link != link:
+        lines.append(f"<p><strong>영어 원문 링크</strong>: <a href=\"{html.escape(source_link)}\">{html.escape(source_link)}</a></p>")
 
     return "\n".join(lines)
 
@@ -394,6 +448,7 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
                     title,
                     enriched.get("page_summary", ""),
                     enriched.get("rss_summary", ""),
+                    enriched.get("source_summary", ""),
                     source_name,
                     category,
                 ]
@@ -410,6 +465,8 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
                 rss_summary=enriched.get("rss_summary", ""),
                 link=enriched["link"],
                 config=config,
+                source_link=enriched.get("source_link"),
+                source_summary=enriched.get("source_summary"),
             )
 
             items.append(
