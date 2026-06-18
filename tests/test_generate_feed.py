@@ -193,7 +193,7 @@ def test_keyword_filter_includes_matching_whats_new_entry() -> None:
     entry = {
         "title": "Amazon CloudWatch announces Log Analytics",
         "summary": "CloudWatch Logs Insights update",
-        "link": "https://aws.amazon.com/about-aws/whats-new/example/",
+        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/amazon-cloudwatch-log-analytics/",
     }
     feed = {"filter_mode": "keyword"}
 
@@ -203,10 +203,25 @@ def test_keyword_filter_includes_matching_whats_new_entry() -> None:
     assert "CloudWatch" in matches
 
 
+def test_keyword_filter_skips_service_match_without_url_hint() -> None:
+    entry = {
+        "title": "Amazon CloudWatch announces Log Analytics",
+        "summary": "CloudWatch Logs Insights update",
+        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/console-experience-update/",
+    }
+    feed = {"filter_mode": "keyword"}
+
+    included, matches = should_include(entry, feed, BASE_CONFIG)
+
+    assert included is False
+    assert matches == []
+
+
 def test_keyword_filter_excludes_noise_entry() -> None:
     entry = {
         "title": "AWS HealthOmics supports CloudWatch logs",
         "summary": "CloudWatch is present but excluded service should win",
+        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/aws-healthomics-cloudwatch-logs/",
     }
     feed = {"filter_mode": "keyword"}
 
@@ -218,9 +233,18 @@ def test_keyword_filter_excludes_noise_entry() -> None:
 
 def test_strict_filter_requires_context_for_broad_keywords() -> None:
     feed = {"filter_mode": "keyword"}
-    broad_only = {"title": "Amazon VPC adds a minor integration"}
-    broad_with_context = {"title": "Amazon VPC console update for endpoint workflows"}
-    precise = {"title": "AWS Transit Gateway announces route table improvements"}
+    broad_only = {
+        "title": "Amazon VPC adds a minor integration",
+        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/amazon-vpc-minor-integration/",
+    }
+    broad_with_context = {
+        "title": "Amazon VPC console update for endpoint workflows",
+        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/amazon-vpc-console-endpoint-workflows/",
+    }
+    precise = {
+        "title": "AWS Transit Gateway announces route table improvements",
+        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/aws-transit-gateway-route-table-improvements/",
+    }
 
     included_broad_only, matches_broad_only = should_include(broad_only, feed, STRICT_FILTER_CONFIG)
     included_broad_with_context, matches_broad_with_context = should_include(broad_with_context, feed, STRICT_FILTER_CONFIG)
@@ -235,9 +259,26 @@ def test_strict_filter_requires_context_for_broad_keywords() -> None:
     assert matches_precise == ["Transit Gateway"]
 
 
+def test_strict_filter_skips_contextual_service_without_url_hint() -> None:
+    feed = {"filter_mode": "keyword"}
+    entry = {
+        "title": "Amazon VPC console update for endpoint workflows",
+        "summary": "VPC endpoint workflow improvements are available.",
+        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/console-experience-update/",
+    }
+
+    included, matches = should_include(entry, feed, STRICT_FILTER_CONFIG)
+
+    assert included is False
+    assert matches == []
+
+
 def test_strict_filter_excludes_bedrock_even_with_context() -> None:
     feed = {"filter_mode": "keyword"}
-    entry = {"title": "Amazon Bedrock console security update for guardrails"}
+    entry = {
+        "title": "Amazon Bedrock console security update for guardrails",
+        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/amazon-bedrock-console-security-update/",
+    }
 
     included, matches = should_include(entry, feed, STRICT_FILTER_CONFIG)
 
