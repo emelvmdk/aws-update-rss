@@ -5,6 +5,15 @@ on:
     # Runs at 08:00, 13:00, and 17:00 KST (23:00, 04:00, 08:00 UTC)
     - cron: "0 4,8,23 * * *"
   workflow_dispatch:
+    inputs:
+      include_test_item:
+        description: "Add one temporary RSS test item to verify Slack delivery"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
   contents: read
@@ -40,6 +49,50 @@ jobs:
       - name: Generate RSS feed
         run: |
           python generate_feed.py
+
+      - name: Add manual Slack RSS test item
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_test_item == 'true' }}
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone
+          from email.utils import format_datetime
+          from pathlib import Path
+          from xml.etree import ElementTree as ET
+
+          feed_path = Path("public/feed.xml")
+          tree = ET.parse(feed_path)
+          root = tree.getroot()
+          channel = root.find("channel")
+          if channel is None:
+              raise RuntimeError("RSS channel element was not found")
+
+          now = datetime.now(timezone.utc)
+          timestamp = now.strftime("%Y%m%d%H%M%S")
+
+          item = ET.Element("item")
+          ET.SubElement(item, "title").text = f"[test] Slack RSS delivery test {timestamp}"
+          ET.SubElement(item, "link").text = "https://github.com/emelvmdk/aws-update-rss/actions"
+          ET.SubElement(item, "guid", isPermaLink="false").text = f"manual-slack-rss-test-{timestamp}"
+          ET.SubElement(item, "pubDate").text = format_datetime(now)
+          ET.SubElement(item, "description").text = (
+              "<p><strong>테스트</strong>: Slack RSS 앱이 새 item을 감지하는지 확인하기 위한 "
+              "수동 테스트 항목입니다. 다음 정기 실행 때 feed에서 사라집니다.</p>"
+          )
+          ET.SubElement(item, "category").text = "test"
+
+          first_item = channel.find("item")
+          if first_item is None:
+              channel.append(item)
+          else:
+              insert_index = list(channel).index(first_item)
+              channel.insert(insert_index, item)
+
+          feed_path.write_text(
+              ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8"),
+              encoding="utf-8",
+          )
+          print(f"Added manual Slack RSS test item manual-slack-rss-test-{timestamp}")
+          PY
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
