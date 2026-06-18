@@ -1,0 +1,126 @@
+output:
+  title: "AWS Update RSS for SA"
+  link: "https://aws.amazon.com/new/"
+  description: "Filtered and Korean-friendly AWS updates for SA, FSI, networking, security, and operations."
+  language: "ko-KR"
+  max_items: 100
+  max_age_days: 30
+
+fetch:
+  timeout_seconds: 20
+  user_agent: "aws-update-rss/1.0 (+https://github.com/emelvmdk/aws-update-rss)"
+
+localization:
+  enabled: true
+  preferred_docs_locale: "ko_kr"
+  preferred_aws_site_locale: "ko"
+  fallback_to_original: true
+
+summary:
+  max_summary_chars: 700
+  max_detail_chars: 900
+  include_matched_keywords: true
+  include_language_status: true
+  include_severity: true
+
+what_new_filter:
+  include_keywords:
+    - CloudWatch
+    - CloudWatch Logs
+    - Log Analytics
+    - Application Signals
+    - Internet Monitor
+    - Network Flow Monitor
+    - Observability
+    - VPC
+    - Transit Gateway
+    - TGW
+    - Cloud WAN
+    - Direct Connect
+    - Site-to-Site VPN
+    - VPN
+    - PrivateLink
+    - Gateway Load Balancer
+    - GWLB
+    - Network Firewall
+    - Route 53
+    - Resolver
+    - CloudFront
+    - Load Balancer
+    - Security Hub
+    - GuardDuty
+    - Inspector
+    - Config
+    - Control Tower
+    - IAM Identity Center
+    - Organizations
+    - KMS
+    - AWS Backup
+    - Resilience Hub
+    - Artifact
+    - RAM
+  exclude_keywords:
+    - HealthOmics
+    - GameLift
+    - IoT Core
+    - Bedrock
+    - SageMaker
+    - Nova
+    - Q Business
+
+severity_rules:
+  high:
+    - security
+    - vulnerability
+    - CVE
+    - encryption
+    - deprecate
+    - deprecated
+    - end of support
+    - mandatory
+    - IAM
+    - KMS
+    - Control Tower
+    - Security Hub
+    - Network Firewall
+    - Transit Gateway
+    - Direct Connect
+  medium:
+    - CloudWatch
+    - Config
+    - Backup
+    - WAF
+    - Route 53
+    - PrivateLink
+    - Load Balancer
+    - CloudFront
+    - VPN
+    - VPC
+  low:
+    - console
+    - dashboard
+    - documentation
+    - guide
+
+category_hints:
+  whats-new: "신규 기능, 콘솔 경험, 리전 확장 또는 서비스 동작 변경 여부를 확인하세요."
+  networking: "라우팅, 연결성, 하이브리드 네트워크, 보안 검사 경로에 영향이 있는지 확인하세요."
+  hybrid-networking: "온프레미스 연동, BGP, 터널, 전용선 연결 영향 여부를 확인하세요."
+  inspection: "방화벽, GWLB, Network Firewall, inspection path의 정책 또는 라우팅 영향 여부를 확인하세요."
+  security: "보안 정책, 탐지, 대응, 권한 또는 취약점 영향 여부를 확인하세요."
+  security-bulletin: "취약점, 패치, 완화 조치가 필요한지 우선 확인하세요."
+  security-governance: "보안 표준, finding, 계정 거버넌스 영향 여부를 확인하세요."
+  governance: "계정, 백업, 규정 준수, 운영 정책 영향 여부를 확인하세요."
+  compliance: "감사, 증적, 보고서 또는 컴플라이언스 운영 영향 여부를 확인하세요."
+  identity: "인증, 권한, SSO, 계정 접근 정책 영향 여부를 확인하세요."
+  landing-zone: "Control Tower landing zone, guardrail, account factory, OU 운영 영향 여부를 확인하세요."
+  multi-account: "계정 간 공유, AWS Organizations, RAM 리소스 공유 영향 여부를 확인하세요."
+  operations: "운영, 모니터링, 로그, 자동화, 장애 분석 흐름에 영향이 있는지 확인하세요."
+  architecture: "아키텍처 패턴, 참조 설계, 운영 모범 사례 변화 여부를 확인하세요."
+  fsi: "금융권 워크로드, 규제, 보안, 복원력, 운영 모델에 참고할 내용인지 확인하세요."
+  edge: "엣지, CDN, 캐시, TLS, 배포 설정 영향 여부를 확인하세요."
+  dns: "DNS, Resolver, routing policy, name resolution 영향 여부를 확인하세요."
+  load-balancing: "ALB/NLB, target group, listener, health check, L4/L7 트래픽 처리 영향 여부를 확인하세요."
+  zero-trust: "Verified Access, 접근 제어, 사용자/디바이스 기반 보안 영향 여부를 확인하세요."
+  edge-security: "WAF, Shield, edge 보안 정책 영향 여부를 확인하세요."
+  privatelink: "PrivateLink, endpoint service, endpoint policy, service connectivity 영향 여부를 확인하세요."
