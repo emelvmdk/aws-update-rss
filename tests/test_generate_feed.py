@@ -310,6 +310,30 @@ def test_extract_page_summary_prefers_meta_description() -> None:
     assert summary == "한국어 요약 설명입니다."
 
 
+def test_extract_page_summary_prefers_korean_text_for_localized_pages() -> None:
+    html_doc = """
+    <html>
+      <head>
+        <meta property="og:title" content="Amazon VPC console update">
+        <meta name="description" content="Amazon VPC now supports a redesigned console workflow.">
+      </head>
+      <body>
+        <h1>Amazon VPC 콘솔 업데이트</h1>
+        <main>
+          <p>Amazon VPC 콘솔에서 엔드포인트와 라우팅 관련 워크플로를 더 쉽게 확인할 수 있도록 화면 구성이 업데이트되었습니다.</p>
+          <p>This English paragraph should not be preferred when Korean content exists.</p>
+        </main>
+      </body>
+    </html>
+    """
+
+    title, summary = extract_page_summary(html_doc, prefer_korean=True)
+
+    assert title == "Amazon VPC 콘솔 업데이트"
+    assert "Amazon VPC 콘솔" in summary
+    assert "redesigned console workflow" not in summary
+
+
 def test_make_guid_is_stable_for_same_entry() -> None:
     entry = {
         "id": "item-1",
