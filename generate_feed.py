@@ -24,7 +24,9 @@ INDEX_FILE = PUBLIC_DIR / "index.html"
 REVIEW_FILE = PUBLIC_DIR / "review.html"
 REVIEW_JSON_FILE = PUBLIC_DIR / "review.json"
 URL_HINT_SKIP_REASON = "url_service_hint_missing"
+LOW_SCORE_SKIP_REASON = "low_keyword_score"
 URL_HINT_DEFAULT_CATEGORIES = {"whats-new", "operations"}
+BROAD_KEYWORD_PASS_SCORE = 4
 
 DOC_SERVICE_NAMES = {
     "aws-backup": "AWS Backup",
@@ -243,11 +245,46 @@ def entry_text(entry: Any) -> str:
     return clean_text(" ".join(str(part) for part in parts)).lower()
 
 
+def entry_body_text(entry: Any) -> str:
+    parts = [entry.get("summary", ""), entry.get("description", "")]
+    parts.extend(tag.get("term", "") for tag in (entry.get("tags") or []))
+    return clean_text(" ".join(str(part) for part in parts)).lower()
+
+
+def score_broad_keyword_match(entry: Any, contextual_matches: list[str], relevance_matches: list[str]) -> tuple[int, list[str]]:
+    title_text = clean_text(entry.get("title", "")).lower()
+    body_text = entry_body_text(entry)
+    link = entry.get("link", "")
+    has_url_hint = matched_keywords_have_url_hint(contextual_matches, link)
+
+    score = 0
+    reasons: list[str] = []
+    title_context = matched_keywords(title_text, contextual_matches)
+    body_context = matched_keywords(body_text, contextual_matches)
+
+    if title_context:
+        score += 3
+        reasons.append(f"title service keyword: {', '.join(title_context)}")
+    elif body_context:
+        score += 2
+        reasons.append(f"body service keyword: {', '.join(body_context)}")
+    elif has_url_hint:
+        score += 1
+        reasons.append("url service hint")
+
+    if relevance_matches:
+        score += 2
+        reasons.append(f"relevance keyword: {', '.join(relevance_matches)}")
+    if has_url_hint:
+        score += 1
+        reasons.append("url hint bonus")
+    return score, reasons
+
+
 def evaluate_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> tuple[bool, list[str], str]:
     mode = feed.get("filter_mode", "all")
     text = entry_text(entry)
-    link = entry.get("link", "")
-    require_url_hint = feed_requires_url_hint(feed)
+    require_scoring = feed_requires_url_hint(feed)
 
     if mode == "all":
         return True, [], ""
@@ -263,21 +300,21 @@ def evaluate_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -
     if always_keywords is not None or contextual_keywords is not None:
         always_matches = matched_keywords(text, always_keywords or [])
         if always_matches:
-            if require_url_hint and not matched_keywords_have_url_hint(always_matches, link):
-                return False, always_matches, URL_HINT_SKIP_REASON
             return True, always_matches, ""
 
         contextual_matches = matched_keywords(text, contextual_keywords or [])
         relevance_matches = matched_keywords(text, relevance_keywords or [])
         if contextual_matches and relevance_matches:
             matches = contextual_matches + relevance_matches
-            if require_url_hint and not matched_keywords_have_url_hint(contextual_matches, link):
-                return False, matches, URL_HINT_SKIP_REASON
+            if require_scoring:
+                score, _ = score_broad_keyword_match(entry, contextual_matches, relevance_matches)
+                if score < BROAD_KEYWORD_PASS_SCORE:
+                    return False, matches, LOW_SCORE_SKIP_REASON
             return True, matches, ""
         return False, [], "no_keyword_match"
 
     matches = matched_keywords(text, filter_config.get("include_keywords", []))
-    if matches and require_url_hint and not matched_keywords_have_url_hint(matches, link):
+    if matches and require_scoring and not matched_keywords_have_url_hint(matches, entry.get("link", "")):
         return False, matches, URL_HINT_SKIP_REASON
     return bool(matches), matches, "" if matches else "no_keyword_match"
 
@@ -287,7 +324,7 @@ def should_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> 
     return included, matches if included else []
 
 
-def review_candidate_from_entry(entry: Any, feed: dict[str, Any], matches: list[str], published_at: datetime) -> dict[str, Any]:
+def review_candidate_from_entry(entry: Any, feed: dict[str, Any], matches: list[str], published_at: datetime, skip_reason: str = URL_HINT_SKIP_REASON) -> dict[str, Any]:
     link = entry.get("link", "")
     return {
         "title": clean_text(entry.get("title", "Untitled")),
@@ -297,7 +334,7 @@ def review_candidate_from_entry(entry: Any, feed: dict[str, Any], matches: list[
         "published_at": published_at.isoformat(),
         "matched_keywords": matches,
         "url_text": url_match_text(link),
-        "skip_reason": URL_HINT_SKIP_REASON,
+        "skip_reason": skip_reason,
     }
 
 
@@ -621,8 +658,8 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
                 continue
             included, matches, skip_reason = evaluate_include(entry, feed, config)
             if not included:
-                if skip_reason == URL_HINT_SKIP_REASON:
-                    review_items.append(review_candidate_from_entry(entry, feed, matches, published_at))
+                if skip_reason in {URL_HINT_SKIP_REASON, LOW_SCORE_SKIP_REASON}:
+                    review_items.append(review_candidate_from_entry(entry, feed, matches, published_at, skip_reason))
                 continue
 
             enriched = enrich_entry(session, entry, feed, config)
@@ -724,22 +761,23 @@ def write_review(review_items: list[dict[str, Any]]) -> None:
             f"<td>{html.escape(item['category'])}</td>"
             f"<td><a href=\"{html.escape(item['link'])}\">{html.escape(item['title'])}</a></td>"
             f"<td>{html.escape(', '.join(item['matched_keywords']))}</td>"
+            f"<td>{html.escape(item['skip_reason'])}</td>"
             f"<td>{html.escape(item['url_text'])}</td>"
             "</tr>"
         )
     if not rows:
-        rows = "<tr><td colspan=\"6\">No URL-hint review candidates.</td></tr>"
+        rows = "<tr><td colspan=\"7\">No review candidates.</td></tr>"
 
     REVIEW_FILE.write_text(f"""<!doctype html>
 <html lang=\"ko\">
 <head><meta charset=\"utf-8\"><title>AWS Update RSS Review</title></head>
 <body>
   <h1>Review candidates</h1>
-  <p>키워드는 매칭됐지만 URL 서비스 힌트가 없어 스킵된 항목만 표시합니다.</p>
+  <p>넓은 키워드 점수가 낮거나 URL 서비스 힌트가 약해 스킵된 항목만 표시합니다.</p>
   <p>JSON: <a href=\"./review.json\">review.json</a></p>
   <p>Count: {len(review_items)}</p>
   <table border=\"1\" cellpadding=\"6\" cellspacing=\"0\">
-    <thead><tr><th>Published</th><th>Source</th><th>Category</th><th>Title</th><th>Matched keywords</th><th>URL text</th></tr></thead>
+    <thead><tr><th>Published</th><th>Source</th><th>Category</th><th>Title</th><th>Matched keywords</th><th>Skip reason</th><th>URL text</th></tr></thead>
     <tbody>{rows}</tbody>
   </table>
 </body>
@@ -758,7 +796,7 @@ def write_status(items: list[dict[str, Any]], failures: list[str], feeds: list[d
   <p>Generated at: {html.escape(datetime.now(timezone.utc).isoformat())}</p>
   <p>Item count: {len(items)}</p>
   <p>Feed count: {len(feeds)}</p>
-  <p>URL-hint review candidate count: {len(review_items)} (<a href=\"./review.html\">review.html</a>, <a href=\"./review.json\">review.json</a>)</p>
+  <p>Review candidate count: {len(review_items)} (<a href=\"./review.html\">review.html</a>, <a href=\"./review.json\">review.json</a>)</p>
   <h2>Failures / warnings</h2>
   <ul>{failure_html}</ul>
   <h2>Feeds</h2>
@@ -778,7 +816,7 @@ def main() -> None:
     write_review(review_items)
     write_status(items, failures, feeds, review_items)
     print(f"Generated {OUTPUT_FILE} with {len(items)} items from {len(feeds)} feeds.")
-    print(f"Generated {REVIEW_FILE} with {len(review_items)} URL-hint review candidates.")
+    print(f"Generated {REVIEW_FILE} with {len(review_items)} review candidates.")
     if failures:
         print("Warnings:")
         for failure in failures:
