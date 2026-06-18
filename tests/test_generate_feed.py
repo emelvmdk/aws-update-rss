@@ -203,7 +203,7 @@ def test_keyword_filter_includes_matching_whats_new_entry() -> None:
     assert "CloudWatch" in matches
 
 
-def test_keyword_filter_skips_service_match_without_url_hint() -> None:
+def test_legacy_keyword_filter_still_uses_url_hint_for_whats_new() -> None:
     entry = {
         "title": "Amazon CloudWatch announces Log Analytics",
         "summary": "CloudWatch Logs Insights update",
@@ -231,7 +231,7 @@ def test_keyword_filter_excludes_noise_entry() -> None:
     assert matches == []
 
 
-def test_strict_filter_requires_context_for_broad_keywords() -> None:
+def test_strict_filter_uses_precise_and_scored_broad_keywords() -> None:
     feed = {"filter_mode": "keyword", "category": "whats-new"}
     broad_only = {
         "title": "Amazon VPC adds a minor integration",
@@ -239,11 +239,11 @@ def test_strict_filter_requires_context_for_broad_keywords() -> None:
     }
     broad_with_context = {
         "title": "Amazon VPC console update for endpoint workflows",
-        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/amazon-vpc-console-endpoint-workflows/",
+        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/improved-networking-console-experience/",
     }
     precise = {
         "title": "AWS Transit Gateway announces route table improvements",
-        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/aws-transit-gateway-route-table-improvements/",
+        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/improved-networking-console-experience/",
     }
 
     included_broad_only, matches_broad_only = should_include(broad_only, feed, STRICT_FILTER_CONFIG)
@@ -259,18 +259,19 @@ def test_strict_filter_requires_context_for_broad_keywords() -> None:
     assert matches_precise == ["Transit Gateway"]
 
 
-def test_strict_filter_skips_contextual_service_without_url_hint() -> None:
+def test_strict_filter_passes_title_service_without_url_hint_when_score_is_high() -> None:
     feed = {"filter_mode": "keyword", "category": "whats-new"}
     entry = {
         "title": "Amazon VPC console update for endpoint workflows",
-        "summary": "VPC endpoint workflow improvements are available.",
+        "summary": "Endpoint workflow improvements are available.",
         "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/console-experience-update/",
     }
 
     included, matches = should_include(entry, feed, STRICT_FILTER_CONFIG)
 
-    assert included is False
-    assert matches == []
+    assert included is True
+    assert "VPC" in matches
+    assert "console" in matches
 
 
 def test_strict_filter_excludes_bedrock_even_with_context() -> None:
