@@ -143,8 +143,8 @@ def detect_severity_with_reasons(text: str, config: dict[str, Any]) -> tuple[str
     The model is intentionally rule-based so that Slack alerts stay explainable:
     critical services such as Control Tower, TGW, GWLB, endpoints, CloudWatch,
     IAM, and security services stay at least Medium, while high-risk changes
-    such as deprecation, policy, security, guardrails, CVE, or behavior changes
-    elevate matching items to High.
+    such as console changes, deprecation, policy, security, guardrails, CVE,
+    or behavior changes elevate matching items to High.
     """
 
     model = config.get("severity_model", {})
@@ -424,33 +424,17 @@ def item_to_rss_description(
     summary_config = config.get("summary", {})
     max_detail_chars = int(summary_config.get("max_detail_chars", 900))
     detail = page_summary or source_summary or rss_summary
-    korean_summary = build_korean_summary(title, source_name, category, severity, detail, config)
 
-    lines = [
-        f"<p><strong>요약</strong>: {html.escape(truncate(korean_summary, int(summary_config.get('max_summary_chars', 700))))}</p>",
-        f"<p><strong>출처</strong>: {html.escape(source_name)}</p>",
-        f"<p><strong>분류</strong>: {html.escape(category)}</p>",
-    ]
+    lines = []
 
     if summary_config.get("include_severity", True):
         lines.append(f"<p><strong>중요도</strong>: {html.escape(severity)}</p>")
     if summary_config.get("include_severity_reasons", True) and severity_reasons:
         lines.append(f"<p><strong>판단 근거</strong>: {html.escape(', '.join(severity_reasons))}</p>")
-    if summary_config.get("include_language_status", True):
-        lines.append(f"<p><strong>표시 언어</strong>: {html.escape(language)}</p>")
-        lines.append("<p><strong>업데이트 기준</strong>: English source feed/page</p>")
-    if summary_config.get("include_matched_keywords", True) and matched:
-        lines.append(f"<p><strong>매칭 키워드</strong>: {html.escape(', '.join(matched))}</p>")
-
     if detail:
-        lines.append(f"<p><strong>상세</strong>: {html.escape(truncate(detail, max_detail_chars))}</p>")
-    if rss_summary and rss_summary != detail:
-        lines.append(f"<p><strong>RSS 원문 설명</strong>: {html.escape(truncate(rss_summary, max_detail_chars))}</p>")
-    if source_summary and source_summary not in (detail, rss_summary):
-        lines.append(f"<p><strong>영어 원문 요약</strong>: {html.escape(truncate(source_summary, max_detail_chars))}</p>")
-
+        lines.append(f"<p><strong>요약</strong>: {html.escape(truncate(detail, max_detail_chars))}</p>")
     if link:
-        lines.append(f"<p><strong>표시 링크</strong>: <a href=\"{html.escape(link)}\">{html.escape(link)}</a></p>")
+        lines.append(f"<p><strong>링크</strong>: <a href=\"{html.escape(link)}\">{html.escape(link)}</a></p>")
     if source_link and source_link != link:
         lines.append(f"<p><strong>영어 원문 링크</strong>: <a href=\"{html.escape(source_link)}\">{html.escape(source_link)}</a></p>")
 
