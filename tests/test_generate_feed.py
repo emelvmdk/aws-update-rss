@@ -195,7 +195,7 @@ def test_keyword_filter_includes_matching_whats_new_entry() -> None:
         "summary": "CloudWatch Logs Insights update",
         "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/amazon-cloudwatch-log-analytics/",
     }
-    feed = {"filter_mode": "keyword"}
+    feed = {"filter_mode": "keyword", "category": "whats-new"}
 
     included, matches = should_include(entry, feed, BASE_CONFIG)
 
@@ -209,7 +209,7 @@ def test_keyword_filter_skips_service_match_without_url_hint() -> None:
         "summary": "CloudWatch Logs Insights update",
         "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/console-experience-update/",
     }
-    feed = {"filter_mode": "keyword"}
+    feed = {"filter_mode": "keyword", "category": "whats-new"}
 
     included, matches = should_include(entry, feed, BASE_CONFIG)
 
@@ -223,7 +223,7 @@ def test_keyword_filter_excludes_noise_entry() -> None:
         "summary": "CloudWatch is present but excluded service should win",
         "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/aws-healthomics-cloudwatch-logs/",
     }
-    feed = {"filter_mode": "keyword"}
+    feed = {"filter_mode": "keyword", "category": "whats-new"}
 
     included, matches = should_include(entry, feed, BASE_CONFIG)
 
@@ -232,7 +232,7 @@ def test_keyword_filter_excludes_noise_entry() -> None:
 
 
 def test_strict_filter_requires_context_for_broad_keywords() -> None:
-    feed = {"filter_mode": "keyword"}
+    feed = {"filter_mode": "keyword", "category": "whats-new"}
     broad_only = {
         "title": "Amazon VPC adds a minor integration",
         "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/amazon-vpc-minor-integration/",
@@ -260,7 +260,7 @@ def test_strict_filter_requires_context_for_broad_keywords() -> None:
 
 
 def test_strict_filter_skips_contextual_service_without_url_hint() -> None:
-    feed = {"filter_mode": "keyword"}
+    feed = {"filter_mode": "keyword", "category": "whats-new"}
     entry = {
         "title": "Amazon VPC console update for endpoint workflows",
         "summary": "VPC endpoint workflow improvements are available.",
@@ -274,7 +274,7 @@ def test_strict_filter_skips_contextual_service_without_url_hint() -> None:
 
 
 def test_strict_filter_excludes_bedrock_even_with_context() -> None:
-    feed = {"filter_mode": "keyword"}
+    feed = {"filter_mode": "keyword", "category": "whats-new"}
     entry = {
         "title": "Amazon Bedrock console security update for guardrails",
         "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/amazon-bedrock-console-security-update/",
