@@ -105,9 +105,26 @@ def entry_text(entry: Any) -> str:
     return clean_text(" ".join(str(part) for part in parts)).lower()
 
 
-def matched_keywords(text: str, keywords: list[str]) -> list[str]:
+def keyword_matches(text: str, keyword: str) -> bool:
+    keyword = keyword.strip()
+    if not keyword:
+        return False
+
     lower_text = text.lower()
-    return [keyword for keyword in keywords if keyword.lower() in lower_text]
+    lower_keyword = keyword.lower()
+
+    # Short AWS acronyms like WAF, IAM, VPC, KMS, SCP, ALB, NLB, SSM,
+    # TGW, ACM, and VPN are noisy with substring matching. Use an
+    # alphanumeric boundary so characters embedded in another word do not match.
+    if len(lower_keyword) <= 4 and re.fullmatch(r"[a-z0-9]+", lower_keyword):
+        pattern = rf"(?<![a-z0-9]){re.escape(lower_keyword)}(?![a-z0-9])"
+        return re.search(pattern, lower_text) is not None
+
+    return lower_keyword in lower_text
+
+
+def matched_keywords(text: str, keywords: list[str]) -> list[str]:
+    return [keyword for keyword in keywords if keyword_matches(text, keyword)]
 
 
 def should_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> tuple[bool, list[str]]:
@@ -117,22 +134,44 @@ def should_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> 
     if mode == "all":
         return True, []
 
-    include_keywords = config.get("what_new_filter", {}).get("include_keywords", [])
-    exclude_keywords = config.get("what_new_filter", {}).get("exclude_keywords", [])
+    filter_config = config.get("what_new_filter", {})
+    exclude_keywords = filter_config.get("exclude_keywords", [])
 
     if matched_keywords(text, exclude_keywords):
         return False, []
 
+    # Stricter What’s New model:
+    # - always_include_keywords are precise enough to pass by themselves.
+    # - contextual_keywords are broad and must be paired with a relevance keyword
+    #   such as console, policy, route, endpoint, security, deprecation, or
+    #   behavior-change wording.
+    # - include_keywords remains as a backward-compatible fallback for simple configs.
+    always_keywords = filter_config.get("always_include_keywords")
+    contextual_keywords = filter_config.get("contextual_keywords")
+    relevance_keywords = filter_config.get("relevance_keywords")
+
+    if always_keywords is not None or contextual_keywords is not None:
+        always_matches = matched_keywords(text, always_keywords or [])
+        if always_matches:
+            return True, always_matches
+
+        contextual_matches = matched_keywords(text, contextual_keywords or [])
+        relevance_matches = matched_keywords(text, relevance_keywords or [])
+        if contextual_matches and relevance_matches:
+            return True, contextual_matches + relevance_matches
+
+        return False, []
+
+    include_keywords = filter_config.get("include_keywords", [])
     matches = matched_keywords(text, include_keywords)
     return bool(matches), matches
 
 
 def _legacy_detect_severity_with_reasons(text: str, config: dict[str, Any]) -> tuple[str, list[str]]:
     rules = config.get("severity_rules", {})
-    lower_text = text.lower()
     for severity in ("high", "medium", "low"):
         for keyword in rules.get(severity, []):
-            if keyword.lower() in lower_text:
+            if keyword_matches(text, keyword):
                 return severity.capitalize(), [f"legacy {severity}: {keyword}"]
     return "Low", ["default: no severity keyword matched"]
 
