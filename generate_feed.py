@@ -35,6 +35,10 @@ def clean_text(value: Any) -> str:
     return text.strip()
 
 
+def has_korean(value: Any) -> bool:
+    return re.search(r"[가-힣]", clean_text(value)) is not None
+
+
 def truncate(value: str, limit: int) -> str:
     value = clean_text(value)
     if len(value) <= limit:
@@ -272,12 +276,12 @@ def fetch_html(session: requests.Session, url: str, timeout: int) -> tuple[str, 
         return None
 
 
-def extract_page_summary(html_doc: str) -> tuple[str, str]:
+def extract_page_summary(html_doc: str, prefer_korean: bool = False) -> tuple[str, str]:
     soup = BeautifulSoup(html_doc, "html.parser")
     for tag in soup(["script", "style", "noscript", "header", "footer", "nav"]):
         tag.decompose()
 
-    title = ""
+    title_candidates: list[str] = []
     for selector in [
         'meta[property="og:title"]',
         'meta[name="twitter:title"]',
@@ -288,10 +292,16 @@ def extract_page_summary(html_doc: str) -> tuple[str, str]:
         if not node:
             continue
         title = clean_text(node.get("content") if node.name == "meta" else node.get_text(" "))
-        if title:
-            break
+        if title and title not in title_candidates:
+            title_candidates.append(title)
 
-    description = ""
+    if prefer_korean:
+        title = next((candidate for candidate in title_candidates if has_korean(candidate)), "")
+        title = title or (title_candidates[0] if title_candidates else "")
+    else:
+        title = title_candidates[0] if title_candidates else ""
+
+    description_candidates: list[str] = []
     for selector in [
         'meta[name="description"]',
         'meta[property="og:description"]',
@@ -300,8 +310,8 @@ def extract_page_summary(html_doc: str) -> tuple[str, str]:
         node = soup.select_one(selector)
         if node:
             description = clean_text(node.get("content"))
-            if description:
-                break
+            if description and description not in description_candidates:
+                description_candidates.append(description)
 
     paragraphs: list[str] = []
     for node in soup.select("main p, article p, #main p, .lb-txt p, p"):
@@ -313,10 +323,18 @@ def extract_page_summary(html_doc: str) -> tuple[str, str]:
             continue
         if text not in paragraphs:
             paragraphs.append(text)
-        if len(paragraphs) >= 2:
+        if len(paragraphs) >= 4:
             break
 
-    summary = description or " ".join(paragraphs)
+    if prefer_korean:
+        korean_description = next((candidate for candidate in description_candidates if has_korean(candidate)), "")
+        korean_paragraphs = [paragraph for paragraph in paragraphs if has_korean(paragraph)]
+        summary = korean_description or " ".join(korean_paragraphs[:2])
+        if not summary:
+            summary = description_candidates[0] if description_candidates else " ".join(paragraphs[:2])
+    else:
+        summary = description_candidates[0] if description_candidates else " ".join(paragraphs[:2])
+
     return title, summary
 
 
@@ -339,8 +357,11 @@ def fetch_page_payload(
     if not fetched:
         return None
     final_url, html_doc = fetched
-    page_title, page_summary = extract_page_summary(html_doc)
+    prefer_korean = language.startswith("ko")
+    page_title, page_summary = extract_page_summary(html_doc, prefer_korean=prefer_korean)
     if not page_title and not page_summary:
+        return None
+    if prefer_korean and not has_korean(" ".join([page_title, page_summary])):
         return None
     return _page_payload(final_url or url, language, page_title, page_summary)
 
