@@ -355,14 +355,18 @@ def test_item_to_rss_description_is_compact_for_slack() -> None:
         matched=["CloudWatch"],
         page_summary="",
         rss_summary="English fallback summary",
-        link="https://aws.amazon.com/example",
+        link="https://aws.amazon.com/ko/example",
         config=BASE_CONFIG,
+        source_link="https://aws.amazon.com/example",
+        source_summary="English source summary",
     )
 
     assert "중요도" in description
     assert "요약" in description
     assert "English fallback summary" in description
-    assert "https://aws.amazon.com/example" in description
+    assert "https://aws.amazon.com/ko/example" in description
+    assert "영어 원문 링크" not in description
+    assert "https://aws.amazon.com/example" not in description
     assert "운영 판단" not in description
     assert "확인할 것" not in description
     assert "표시 언어" not in description
