@@ -55,7 +55,7 @@ what_new_filter:
     - Security Hub
     - GuardDuty
     - Inspector
-    - Config
+    - AWS Config
     - Control Tower
     - IAM Identity Center
     - Organizations
@@ -66,7 +66,8 @@ what_new_filter:
     - AWS Backup
     - Resilience Hub
     - Artifact
-    - RAM
+    - AWS RAM
+    - Resource Access Manager
     - CloudTrail
     - AWS WAF
     - WAF
@@ -120,7 +121,7 @@ severity_rules:
     - Bedrock Guardrails
   medium:
     - CloudWatch
-    - Config
+    - AWS Config
     - Backup
     - Route 53
     - PrivateLink
