@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from generate_feed import enrich_entry, should_include
+from generate_feed import URL_HINT_SKIP_REASON, enrich_entry, evaluate_include, should_include
 
 
 CONFIG = {
@@ -182,6 +182,20 @@ def test_whats_new_filter_uses_english_source_entry_text() -> None:
 
     assert included is True
     assert matches == ["CloudWatch"]
+
+
+def test_url_hint_skipped_candidate_keeps_review_reason() -> None:
+    entry = {
+        "title": "Amazon CloudWatch announces Log Analytics",
+        "summary": "CloudWatch Logs Insights and Live Tail are unified.",
+        "link": "https://aws.amazon.com/about-aws/whats-new/2026/06/console-experience-update/",
+    }
+
+    included, matches, reason = evaluate_include(entry, {"filter_mode": "keyword"}, CONFIG)
+
+    assert included is False
+    assert matches == ["CloudWatch"]
+    assert reason == URL_HINT_SKIP_REASON
 
 
 def test_whats_new_exclude_keywords_win_even_when_included_keyword_exists() -> None:
