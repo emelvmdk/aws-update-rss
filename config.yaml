@@ -22,6 +22,7 @@ summary:
   include_matched_keywords: true
   include_language_status: true
   include_severity: true
+  include_severity_reasons: true
 
 what_new_filter:
   include_keywords:
@@ -40,8 +41,14 @@ what_new_filter:
     - Site-to-Site VPN
     - VPN
     - PrivateLink
+    - VPC Endpoint
+    - Interface Endpoint
+    - Gateway Endpoint
+    - Endpoint Service
     - Gateway Load Balancer
     - GWLB
+    - Gateway Load Balancer Endpoint
+    - GWLBe
     - Network Firewall
     - Route 53
     - Resolver
@@ -56,8 +63,12 @@ what_new_filter:
     - GuardDuty
     - Inspector
     - AWS Config
+    - AWS Control Tower
     - Control Tower
+    - Landing Zone
+    - Account Factory
     - IAM Identity Center
+    - AWS Organizations
     - Organizations
     - IAM
     - Service Control Policy
@@ -94,6 +105,142 @@ what_new_filter:
     - Nova
     - Q Business
 
+severity_model:
+  critical_services:
+    # Multi-account / governance
+    - AWS Control Tower
+    - Control Tower
+    - Landing Zone
+    - Account Factory
+    - AWS Organizations
+    - Organizations
+    - Service Control Policy
+    - SCP
+    - IAM Identity Center
+    - IAM
+    - KMS
+    - CloudTrail
+    - AWS Config
+
+    # Security
+    - Security Hub
+    - GuardDuty
+    - Inspector
+    - Network Firewall
+    - AWS WAF
+    - WAF
+    - Shield
+    - Firewall Manager
+
+    # Core networking / inspection path
+    - VPC
+    - Transit Gateway
+    - TGW
+    - Cloud WAN
+    - Direct Connect
+    - Site-to-Site VPN
+    - VPN
+    - Route 53
+    - Resolver
+    - PrivateLink
+    - VPC Endpoint
+    - Interface Endpoint
+    - Gateway Endpoint
+    - Endpoint Service
+    - Gateway Load Balancer
+    - GWLB
+    - Gateway Load Balancer Endpoint
+    - GWLBe
+
+    # Operations / observability
+    - CloudWatch
+    - CloudWatch Logs
+    - Application Signals
+    - Internet Monitor
+    - Network Flow Monitor
+
+  important_services:
+    - Amazon Bedrock
+    - Bedrock
+    - Bedrock Guardrails
+    - Bedrock Agents
+    - Bedrock Knowledge Bases
+    - EventBridge
+    - Systems Manager
+    - SSM
+    - AWS Backup
+    - Backup
+    - Resilience Hub
+    - Artifact
+    - AWS RAM
+    - Resource Access Manager
+    - CloudFront
+    - Load Balancer
+    - Elastic Load Balancing
+    - ALB
+    - Application Load Balancer
+    - NLB
+    - Network Load Balancer
+    - Verified Access
+
+  high_change_types:
+    - security
+    - vulnerability
+    - CVE
+    - encryption
+    - deprecated
+    - deprecate
+    - end of support
+    - mandatory
+    - permission
+    - permissions
+    - policy
+    - authorization
+    - authentication
+    - behavior change
+    - breaking change
+    - data exposure
+    - sensitive data
+    - prompt injection
+    - Bedrock Guardrails
+    - guardrails
+    - appliance mode
+    - route propagation
+    - route table
+    - health check
+    - failover
+    - tunnel
+    - BGP
+    - landing zone
+    - account factory
+    - guardrail
+    - organizational unit
+    - OU
+
+  medium_change_types:
+    - console
+    - dashboard
+    - generally available
+    - new capability
+    - new capabilities
+    - new feature
+    - region
+    - region expansion
+    - preview
+    - integration
+    - supports
+    - support
+    - now available
+    - launch
+    - announces
+
+  low_change_types:
+    - documentation
+    - guide
+    - tutorial
+    - sample
+    - blog
+
 severity_rules:
   high:
     - security
@@ -113,6 +260,12 @@ severity_rules:
     - Network Firewall
     - Transit Gateway
     - Direct Connect
+    - Gateway Load Balancer
+    - GWLB
+    - Gateway Load Balancer Endpoint
+    - GWLBe
+    - VPC Endpoint
+    - Endpoint Service
     - CloudTrail
     - AWS WAF
     - WAF
@@ -125,6 +278,8 @@ severity_rules:
     - Backup
     - Route 53
     - PrivateLink
+    - Interface Endpoint
+    - Gateway Endpoint
     - Load Balancer
     - Elastic Load Balancing
     - ALB
