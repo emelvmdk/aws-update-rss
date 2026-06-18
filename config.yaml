@@ -59,11 +59,15 @@ what_new_filter:
     - Resilience Hub
     - Artifact
     - RAM
+    - Bedrock
+    - Amazon Bedrock
+    - Bedrock Guardrails
+    - Bedrock Agents
+    - Bedrock Knowledge Bases
   exclude_keywords:
     - HealthOmics
     - GameLift
     - IoT Core
-    - Bedrock
     - SageMaker
     - Nova
     - Q Business
@@ -85,6 +89,7 @@ severity_rules:
     - Network Firewall
     - Transit Gateway
     - Direct Connect
+    - Bedrock Guardrails
   medium:
     - CloudWatch
     - Config
@@ -96,6 +101,8 @@ severity_rules:
     - CloudFront
     - VPN
     - VPC
+    - Bedrock
+    - Amazon Bedrock
   low:
     - console
     - dashboard
