@@ -20,6 +20,23 @@ PUBLIC_DIR = ROOT / "public"
 OUTPUT_FILE = PUBLIC_DIR / "feed.xml"
 STATUS_FILE = PUBLIC_DIR / "status.html"
 INDEX_FILE = PUBLIC_DIR / "index.html"
+DOC_SERVICE_NAMES = {
+    "aws-backup": "AWS Backup",
+    "config": "AWS Config",
+    "controltower": "AWS Control Tower",
+    "organizations": "AWS Organizations",
+    "ram": "AWS RAM",
+    "iam": "IAM",
+    "singlesignon": "IAM Identity Center",
+    "vpc": "Amazon VPC",
+    "directconnect": "AWS Direct Connect",
+    "route53": "Amazon Route 53",
+    "cloudwatch": "Amazon CloudWatch",
+    "cloudtrail": "AWS CloudTrail",
+    "securityhub": "AWS Security Hub",
+    "waf": "AWS WAF",
+    "network-firewall": "AWS Network Firewall",
+}
 
 
 def clean_text(value: Any) -> str:
@@ -215,6 +232,50 @@ def detect_severity(text: str, config: dict[str, Any]) -> str:
     return severity
 
 
+def docs_service_name_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.netloc.lower() != "docs.aws.amazon.com":
+        return ""
+    parts = [part for part in parsed.path.split("/") if part]
+    if parts and re.fullmatch(r"[a-z]{2}(?:_[a-z]{2})?", parts[0]):
+        parts = parts[1:]
+    if not parts:
+        return ""
+    service_key = parts[0]
+    if service_key in DOC_SERVICE_NAMES:
+        return DOC_SERVICE_NAMES[service_key]
+    if service_key.startswith("aws-"):
+        return "AWS " + " ".join(word.capitalize() for word in service_key[4:].split("-"))
+    return " ".join(word.upper() if len(word) <= 3 else word.capitalize() for word in service_key.split("-"))
+
+
+def normalize_display_title(title: str, source_title: str = "", link: str = "") -> str:
+    title = clean_text(title)
+    source_title = clean_text(source_title)
+    service = docs_service_name_from_url(link)
+
+    misplaced = re.fullmatch(r"에 대한 문서 기록\s+(.+)", title)
+    if misplaced:
+        subject = clean_text(misplaced.group(1))
+        return f"{subject} 문서 기록" if subject else title
+
+    regular = re.fullmatch(r"(.+?)에 대한 문서 기록", title)
+    if regular:
+        subject = clean_text(regular.group(1))
+        return f"{subject} 문서 기록" if subject else title
+
+    generic_titles = {"문서 기록", "문서 기록 페이지", "document history", "document history page"}
+    if service and title.lower() in generic_titles:
+        return f"{service} 문서 기록"
+    if service and "documenthistory" in urlparse(link).path.lower() and title == "문서 기록":
+        return f"{service} 문서 기록"
+    if service and "doc-history" in urlparse(link).path.lower() and title == "문서 기록":
+        return f"{service} 문서 기록"
+    if service and source_title.lower().startswith("document history") and title.lower().startswith("document history"):
+        return f"{service} 문서 기록"
+    return title
+
+
 def localized_url_candidate(url: str, config: dict[str, Any]) -> str | None:
     if not url:
         return None
@@ -337,10 +398,11 @@ def enrich_entry(session: requests.Session, entry: Any, feed: dict[str, Any], co
             language = "ko" if "aws.amazon.com/ko/" in localized else "ko_kr"
             localized_payload = fetch_page_payload(session, localized, language, timeout)
             if localized_payload:
+                display_title = normalize_display_title(localized_payload["title"] or source_title, source_title, localized_payload["url"])
                 return {
                     "link": localized_payload["url"],
                     "language": language,
-                    "title": localized_payload["title"] or source_title,
+                    "title": display_title,
                     "page_summary": localized_payload["summary"],
                     "rss_summary": rss_summary,
                     "source_link": source_link,
@@ -350,10 +412,11 @@ def enrich_entry(session: requests.Session, entry: Any, feed: dict[str, Any], co
                 }
 
     if english_payload:
+        display_title = normalize_display_title(english_payload["title"] or rss_title, source_title, english_payload["url"])
         return {
             "link": english_payload["url"],
             "language": "en fallback",
-            "title": english_payload["title"] or rss_title,
+            "title": display_title,
             "page_summary": english_payload["summary"],
             "rss_summary": rss_summary,
             "source_link": source_link,
@@ -362,10 +425,11 @@ def enrich_entry(session: requests.Session, entry: Any, feed: dict[str, Any], co
             "source_language": "en source",
         }
 
+    display_title = normalize_display_title(rss_title, rss_title, original_link)
     return {
         "link": original_link,
         "language": "rss-only fallback",
-        "title": rss_title,
+        "title": display_title,
         "page_summary": "",
         "rss_summary": rss_summary,
         "source_link": original_link,
