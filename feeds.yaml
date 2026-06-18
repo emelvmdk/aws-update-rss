@@ -1,0 +1,36 @@
+feeds:
+  - name: "AWS What's New Filtered"
+    url: "https://aws.amazon.com/about-aws/whats-new/recent/feed/"
+    category: "whats-new"
+    filter_mode: "keyword"
+    enabled: true
+  - name: "AWS Backup Developer Guide"
+    url: "https://docs.aws.amazon.com/aws-backup/latest/devguide/backup-dg-rss-updates.rss"
+    category: "governance"
+    filter_mode: "all"
+    enabled: true
+  - name: "AWS IAM Identity Center Guide Documentation History"
+    url: "https://docs.aws.amazon.com/singlesignon/latest/userguide/iam-identity-center-user-guide-doc-history.rss"
+    category: "identity"
+    filter_mode: "all"
+    enabled: true
+  - name: "AWS Artifact Release Notes"
+    url: "https://docs.aws.amazon.com/artifact/latest/ug/amazon-art-release-notes.rss"
+    category: "compliance"
+    filter_mode: "all"
+    enabled: true
+  - name: "AWS Security Hub Documentation Updates"
+    url: "https://docs.aws.amazon.com/securityhub/latest/userguide/aws-security-hub-doc-updates.rss"
+    category: "security-governance"
+    filter_mode: "all"
+    enabled: true
+  - name: "AWS Config Developer Guide Document History"
+    url: "https://docs.aws.amazon.com/config/latest/developerguide/aws-config-document-history.rss"
+    category: "governance"
+    filter_mode: "all"
+    enabled: true
+  - name: "AWS Control Tower User Guide Updates"
+    url: "https://docs.aws.amazon.com/controltower/latest/userguide/control-tower-guide.rss"
+    category: "landing-zone"
+    filter_mode: "all"
+    enabled: true
