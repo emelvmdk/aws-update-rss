@@ -2,8 +2,9 @@ name: Build filtered AWS update RSS
 
 on:
   schedule:
-    # Runs at 08:00, 13:00, and 17:00 KST (23:00, 04:00, 08:00 UTC)
-    - cron: "0 4,8,23 * * *"
+    # Runs at 08:10, 13:10, and 17:10 KST (23:10, 04:10, 08:10 UTC)
+    # Avoids the top-of-hour GitHub Actions schedule congestion window.
+    - cron: "10 4,8,23 * * *"
   workflow_dispatch:
     inputs:
       include_test_item:
