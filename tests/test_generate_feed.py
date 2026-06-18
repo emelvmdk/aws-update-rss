@@ -58,9 +58,9 @@ STRICT_FILTER_CONFIG = {
     **BASE_CONFIG,
     "what_new_filter": {
         "always_include_keywords": ["Transit Gateway", "AWS WAF"],
-        "contextual_keywords": ["VPC", "IAM", "WAF", "Bedrock"],
+        "contextual_keywords": ["VPC", "IAM", "WAF"],
         "relevance_keywords": ["console", "security", "policy", "endpoint"],
-        "exclude_keywords": ["HealthOmics"],
+        "exclude_keywords": ["HealthOmics", "Bedrock", "Amazon Bedrock", "Bedrock Guardrails"],
     },
 }
 
@@ -203,6 +203,16 @@ def test_strict_filter_requires_context_for_broad_keywords() -> None:
     assert "console" in matches_broad_with_context
     assert included_precise is True
     assert matches_precise == ["Transit Gateway"]
+
+
+def test_strict_filter_excludes_bedrock_even_with_context() -> None:
+    feed = {"filter_mode": "keyword"}
+    entry = {"title": "Amazon Bedrock console security update for guardrails"}
+
+    included, matches = should_include(entry, feed, STRICT_FILTER_CONFIG)
+
+    assert included is False
+    assert matches == []
 
 
 def test_short_acronyms_use_alphanumeric_boundaries() -> None:
