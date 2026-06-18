@@ -17,6 +17,7 @@ from generate_feed import (
     localized_url_candidate,
     make_guid,
     matched_keywords,
+    normalize_display_title,
     should_include,
     truncate,
 )
@@ -178,6 +179,14 @@ def test_localized_url_candidate(url: str, expected: str) -> None:
 
 def test_localized_url_candidate_returns_none_for_unknown_domain() -> None:
     assert localized_url_candidate("https://example.com/page", BASE_CONFIG) is None
+
+
+def test_normalize_display_title_fixes_docs_history_titles() -> None:
+    backup_url = "https://docs.aws.amazon.com/ko_kr/aws-backup/latest/devguide/doc-history.html"
+    config_url = "https://docs.aws.amazon.com/ko_kr/config/latest/developerguide/DocumentHistory.html"
+
+    assert normalize_display_title("에 대한 문서 기록 AWS Backup", "Document history for AWS Backup", backup_url) == "AWS Backup 문서 기록"
+    assert normalize_display_title("문서 기록", "Document history", config_url) == "AWS Config 문서 기록"
 
 
 def test_keyword_filter_includes_matching_whats_new_entry() -> None:
