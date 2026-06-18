@@ -2,7 +2,8 @@ name: Build filtered AWS update RSS
 
 on:
   schedule:
-    - cron: "10 * * * *"
+    # Runs at 09:10, 15:10, and 21:10 KST (00:10, 06:10, 12:10 UTC)
+    - cron: "10 0,6,12 * * *"
   workflow_dispatch:
 
 permissions:
