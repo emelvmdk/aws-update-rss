@@ -127,14 +127,64 @@ def should_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -> 
     return bool(matches), matches
 
 
-def detect_severity(text: str, config: dict[str, Any]) -> str:
+def _legacy_detect_severity_with_reasons(text: str, config: dict[str, Any]) -> tuple[str, list[str]]:
     rules = config.get("severity_rules", {})
     lower_text = text.lower()
     for severity in ("high", "medium", "low"):
         for keyword in rules.get(severity, []):
             if keyword.lower() in lower_text:
-                return severity.capitalize()
-    return "Low"
+                return severity.capitalize(), [f"legacy {severity}: {keyword}"]
+    return "Low", ["default: no severity keyword matched"]
+
+
+def detect_severity_with_reasons(text: str, config: dict[str, Any]) -> tuple[str, list[str]]:
+    """Classify update priority from service criticality and change type.
+
+    The model is intentionally rule-based so that Slack alerts stay explainable:
+    critical services such as Control Tower, TGW, GWLB, endpoints, CloudWatch,
+    IAM, and security services stay at least Medium, while high-risk changes
+    such as deprecation, policy, security, guardrails, CVE, or behavior changes
+    elevate matching items to High.
+    """
+
+    model = config.get("severity_model", {})
+    if not model:
+        return _legacy_detect_severity_with_reasons(text, config)
+
+    critical_services = matched_keywords(text, model.get("critical_services", []))
+    important_services = matched_keywords(text, model.get("important_services", []))
+    high_changes = matched_keywords(text, model.get("high_change_types", []))
+    medium_changes = matched_keywords(text, model.get("medium_change_types", []))
+    low_changes = matched_keywords(text, model.get("low_change_types", []))
+
+    reasons: list[str] = []
+    reasons.extend(f"critical service: {keyword}" for keyword in critical_services[:3])
+    reasons.extend(f"important service: {keyword}" for keyword in important_services[:3])
+    reasons.extend(f"high change: {keyword}" for keyword in high_changes[:3])
+    reasons.extend(f"medium change: {keyword}" for keyword in medium_changes[:3])
+    reasons.extend(f"low signal: {keyword}" for keyword in low_changes[:3])
+
+    if high_changes:
+        return "High", reasons or ["high change type matched"]
+    if critical_services and medium_changes:
+        return "Medium", reasons or ["critical service with medium change type"]
+    if critical_services:
+        return "Medium", reasons or ["critical service matched"]
+    if important_services and medium_changes:
+        return "Medium", reasons or ["important service with medium change type"]
+    if important_services:
+        return "Medium", reasons or ["important service matched"]
+    if medium_changes:
+        return "Medium", reasons or ["medium change type matched"]
+    if low_changes:
+        return "Low", reasons or ["low signal matched"]
+
+    return _legacy_detect_severity_with_reasons(text, config)
+
+
+def detect_severity(text: str, config: dict[str, Any]) -> str:
+    severity, _ = detect_severity_with_reasons(text, config)
+    return severity
 
 
 def localized_url_candidate(url: str, config: dict[str, Any]) -> str | None:
@@ -369,6 +419,7 @@ def item_to_rss_description(
     config: dict[str, Any],
     source_link: str | None = None,
     source_summary: str | None = None,
+    severity_reasons: list[str] | None = None,
 ) -> str:
     summary_config = config.get("summary", {})
     max_detail_chars = int(summary_config.get("max_detail_chars", 900))
@@ -383,6 +434,8 @@ def item_to_rss_description(
 
     if summary_config.get("include_severity", True):
         lines.append(f"<p><strong>중요도</strong>: {html.escape(severity)}</p>")
+    if summary_config.get("include_severity_reasons", True) and severity_reasons:
+        lines.append(f"<p><strong>판단 근거</strong>: {html.escape(', '.join(severity_reasons))}</p>")
     if summary_config.get("include_language_status", True):
         lines.append(f"<p><strong>표시 언어</strong>: {html.escape(language)}</p>")
         lines.append("<p><strong>업데이트 기준</strong>: English source feed/page</p>")
@@ -453,7 +506,7 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
                     category,
                 ]
             )
-            severity = detect_severity(combined_text, config)
+            severity, severity_reasons = detect_severity_with_reasons(combined_text, config)
             description = item_to_rss_description(
                 title=title,
                 source_name=source_name,
@@ -467,6 +520,7 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
                 config=config,
                 source_link=enriched.get("source_link"),
                 source_summary=enriched.get("source_summary"),
+                severity_reasons=severity_reasons,
             )
 
             items.append(
@@ -479,6 +533,7 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
                     "source": source_name,
                     "category": category,
                     "severity": severity,
+                    "severity_reasons": severity_reasons,
                 }
             )
 
