@@ -71,26 +71,22 @@ jobs:
           for item in channel.findall("item"):
               title_node = item.find("title")
               description_node = item.find("description")
-              category_node = item.find("category")
               if title_node is None or not title_node.text:
                   continue
 
               description = description_node.text if description_node is not None and description_node.text else ""
               match = source_pattern.search(description)
               source_name = html.unescape(match.group(1)).strip() if match else ""
-              category = category_node.text.strip() if category_node is not None and category_node.text else "general"
 
               if not source_name:
                   continue
-              if title_node.text.startswith(f"[{category}]["):
+              if title_node.text.startswith(f"[{source_name}]"):
                   continue
 
               current_title = title_node.text
-              prefix = f"[{category}]"
-              if current_title.startswith(prefix):
-                  current_title = current_title[len(prefix):].strip()
+              current_title = re.sub(r"^\[[^\]]+\]", "", current_title).strip()
 
-              title_node.text = f"[{category}][{source_name}] {current_title}"
+              title_node.text = f"[{source_name}] {current_title}"
 
           feed_path.write_text(
               ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8"),
@@ -119,7 +115,7 @@ jobs:
           timestamp = now.strftime("%Y%m%d%H%M%S")
 
           item = ET.Element("item")
-          ET.SubElement(item, "title").text = f"[test][Manual Slack RSS Test] Slack RSS delivery test {timestamp}"
+          ET.SubElement(item, "title").text = f"[Manual Slack RSS Test] Slack RSS delivery test {timestamp}"
           ET.SubElement(item, "link").text = "https://github.com/emelvmdk/aws-update-rss/actions"
           ET.SubElement(item, "guid", isPermaLink="false").text = f"manual-slack-rss-test-{timestamp}"
           ET.SubElement(item, "pubDate").text = format_datetime(now)
