@@ -54,6 +54,17 @@ BASE_CONFIG = {
 }
 
 
+STRICT_FILTER_CONFIG = {
+    **BASE_CONFIG,
+    "what_new_filter": {
+        "always_include_keywords": ["Transit Gateway", "AWS WAF"],
+        "contextual_keywords": ["VPC", "IAM", "WAF", "Bedrock"],
+        "relevance_keywords": ["console", "security", "policy", "endpoint"],
+        "exclude_keywords": ["HealthOmics"],
+    },
+}
+
+
 SERVICE_AWARE_CONFIG = {
     **BASE_CONFIG,
     "severity_model": {
@@ -173,6 +184,32 @@ def test_keyword_filter_excludes_noise_entry() -> None:
 
     assert included is False
     assert matches == []
+
+
+def test_strict_filter_requires_context_for_broad_keywords() -> None:
+    feed = {"filter_mode": "keyword"}
+    broad_only = {"title": "Amazon VPC adds a minor integration"}
+    broad_with_context = {"title": "Amazon VPC console update for endpoint workflows"}
+    precise = {"title": "AWS Transit Gateway announces route table improvements"}
+
+    included_broad_only, matches_broad_only = should_include(broad_only, feed, STRICT_FILTER_CONFIG)
+    included_broad_with_context, matches_broad_with_context = should_include(broad_with_context, feed, STRICT_FILTER_CONFIG)
+    included_precise, matches_precise = should_include(precise, feed, STRICT_FILTER_CONFIG)
+
+    assert included_broad_only is False
+    assert matches_broad_only == []
+    assert included_broad_with_context is True
+    assert "VPC" in matches_broad_with_context
+    assert "console" in matches_broad_with_context
+    assert included_precise is True
+    assert matches_precise == ["Transit Gateway"]
+
+
+def test_short_acronyms_use_alphanumeric_boundaries() -> None:
+    assert matched_keywords("AWS WAF policy update", ["WAF"]) == ["WAF"]
+    assert matched_keywords("The wafer service update", ["WAF"]) == []
+    assert matched_keywords("IAM Identity Center update", ["IAM"]) == ["IAM"]
+    assert matched_keywords("premium feature update", ["IAM"]) == []
 
 
 def test_all_filter_mode_includes_entry_without_keywords() -> None:
