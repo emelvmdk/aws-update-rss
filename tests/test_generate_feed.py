@@ -67,9 +67,34 @@ SERVICE_AWARE_CONFIG = {
             "GWLBe",
             "VPC Endpoint",
             "Endpoint Service",
+            "IAM Access Analyzer",
+            "AWS Secrets Manager",
+            "AWS Certificate Manager",
+            "Amazon Macie",
+            "VPC Flow Logs",
+            "Reachability Analyzer",
+            "Network Access Analyzer",
+            "Traffic Mirroring",
+            "VPC IPAM",
+            "NAT Gateway",
+            "Internet Gateway",
+            "AWS Health",
+            "Service Quotas",
+            "AWS CloudFormation",
+            "AWS Service Catalog",
         ],
-        "important_services": ["Amazon Bedrock", "Bedrock"],
+        "important_services": [
+            "Amazon Bedrock",
+            "Bedrock",
+            "VPC Lattice",
+            "AWS Detective",
+            "AWS Trusted Advisor",
+        ],
         "high_change_types": [
+            "console",
+            "dashboard",
+            "console experience",
+            "new console",
             "security",
             "policy",
             "landing zone",
@@ -79,7 +104,7 @@ SERVICE_AWARE_CONFIG = {
             "failover",
             "Bedrock Guardrails",
         ],
-        "medium_change_types": ["console", "dashboard", "new capability", "generally available"],
+        "medium_change_types": ["new capability", "generally available", "region expansion"],
         "low_change_types": ["documentation", "guide"],
     },
 }
@@ -166,15 +191,15 @@ def test_detect_severity_uses_high_before_medium() -> None:
     assert detect_severity("console guide update", BASE_CONFIG) == "Low"
 
 
-def test_service_aware_severity_keeps_critical_console_updates_medium() -> None:
+def test_service_aware_severity_elevates_console_updates_to_high() -> None:
     severity, reasons = detect_severity_with_reasons(
         "Amazon CloudWatch console experience update",
         SERVICE_AWARE_CONFIG,
     )
 
-    assert severity == "Medium"
+    assert severity == "High"
     assert "critical service: CloudWatch" in reasons
-    assert "medium change: console" in reasons
+    assert "high change: console" in reasons
 
 
 def test_service_aware_severity_elevates_control_tower_and_gwlb_path_changes() -> None:
@@ -191,6 +216,28 @@ def test_service_aware_severity_elevates_control_tower_and_gwlb_path_changes() -
     assert any("Control Tower" in reason for reason in control_tower_reasons)
     assert gwlb_severity == "High"
     assert any("Gateway Load Balancer" in reason for reason in gwlb_reasons)
+
+
+def test_service_aware_severity_handles_added_sa_services() -> None:
+    flow_logs_severity, flow_logs_reasons = detect_severity_with_reasons(
+        "VPC Flow Logs documentation update",
+        SERVICE_AWARE_CONFIG,
+    )
+    reachability_severity, reachability_reasons = detect_severity_with_reasons(
+        "Reachability Analyzer console update",
+        SERVICE_AWARE_CONFIG,
+    )
+    secrets_manager_severity, secrets_manager_reasons = detect_severity_with_reasons(
+        "AWS Secrets Manager announces a new capability",
+        SERVICE_AWARE_CONFIG,
+    )
+
+    assert flow_logs_severity == "Medium"
+    assert any("VPC Flow Logs" in reason for reason in flow_logs_reasons)
+    assert reachability_severity == "High"
+    assert any("Reachability Analyzer" in reason for reason in reachability_reasons)
+    assert secrets_manager_severity == "Medium"
+    assert any("AWS Secrets Manager" in reason for reason in secrets_manager_reasons)
 
 
 def test_matched_keywords_is_case_insensitive() -> None:
@@ -252,18 +299,19 @@ def test_item_to_rss_description_can_include_severity_reasons() -> None:
         title="CloudWatch console update",
         source_name="AWS What's New Filtered",
         category="whats-new",
-        severity="Medium",
+        severity="High",
         language="en fallback",
         matched=["CloudWatch"],
         page_summary="",
         rss_summary="CloudWatch console update",
         link="https://aws.amazon.com/example",
         config={**BASE_CONFIG, "summary": {**BASE_CONFIG["summary"], "include_severity_reasons": True}},
-        severity_reasons=["critical service: CloudWatch", "medium change: console"],
+        severity_reasons=["critical service: CloudWatch", "high change: console"],
     )
 
     assert "판단 근거" in description
     assert "critical service: CloudWatch" in description
+    assert "high change: console" in description
 
 
 def test_build_rss_outputs_valid_xml() -> None:
