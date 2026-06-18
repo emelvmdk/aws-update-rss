@@ -14,7 +14,6 @@ AWS update RSS aggregator for Slack.
 - 한국어 페이지가 없거나 추출 실패 시 영어 원문 page로 fallback
 - Slack에서 읽기 좋은 한글 템플릿 요약 생성
 - 중요도/카테고리 태그 부여
-- GitHub Actions + GitHub Pages로 무료 운영
 - pytest 기반 핵심 로직 테스트
 
 ## 사용 흐름
