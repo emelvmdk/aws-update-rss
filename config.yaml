@@ -215,7 +215,6 @@ severity_model:
     - account factory
     - guardrail
     - organizational unit
-    - OU
 
   medium_change_types:
     - console
