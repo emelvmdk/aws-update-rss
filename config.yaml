@@ -25,21 +25,17 @@ summary:
   include_severity_reasons: true
 
 what_new_filter:
-  include_keywords:
-    - CloudWatch
+  # Precise service names. These are narrow enough to include by themselves.
+  always_include_keywords:
     - CloudWatch Logs
     - Log Analytics
     - Application Signals
     - Internet Monitor
     - Network Flow Monitor
-    - Observability
-    - VPC
     - Transit Gateway
-    - TGW
     - Cloud WAN
     - Direct Connect
     - Site-to-Site VPN
-    - VPN
     - PrivateLink
     - VPC Endpoint
     - Interface Endpoint
@@ -53,7 +49,6 @@ what_new_filter:
     - Route 53
     - Resolver
     - VPC IPAM
-    - IPAM
     - AWS Network Manager
     - Network Manager
     - Reachability Analyzer
@@ -63,25 +58,14 @@ what_new_filter:
     - NAT Gateway
     - Internet Gateway
     - Egress-only Internet Gateway
-    - Elastic IP
-    - Prefix List
     - Managed Prefix List
-    - CloudFront
-    - Load Balancer
-    - Elastic Load Balancing
-    - ALB
-    - Application Load Balancer
-    - NLB
-    - Network Load Balancer
     - Security Hub
     - GuardDuty
     - Inspector
     - IAM Access Analyzer
-    - Access Analyzer
     - AWS Secrets Manager
     - Secrets Manager
     - AWS Certificate Manager
-    - ACM
     - AWS Audit Manager
     - Audit Manager
     - Amazon Macie
@@ -92,24 +76,46 @@ what_new_filter:
     - Landing Zone
     - Account Factory
     - IAM Identity Center
-    - AWS Organizations
-    - Organizations
-    - IAM
     - Service Control Policy
-    - SCP
-    - KMS
-    - AWS Backup
-    - Resilience Hub
-    - Artifact
-    - AWS RAM
-    - Resource Access Manager
     - CloudTrail
     - AWS WAF
     - WAF
-    - Shield
     - AWS Shield
     - Firewall Manager
     - AWS Firewall Manager
+    - AWS RAM
+    - Resource Access Manager
+    - AWS Health
+    - AWS Personal Health Dashboard
+    - Service Quotas
+    - Bedrock Guardrails
+    - Bedrock Agents
+    - Bedrock Knowledge Bases
+
+  # Broad service or acronym keywords. These need a relevance keyword below.
+  contextual_keywords:
+    - CloudWatch
+    - Observability
+    - VPC
+    - TGW
+    - VPN
+    - CloudFront
+    - Load Balancer
+    - Elastic Load Balancing
+    - ALB
+    - NLB
+    - Network Load Balancer
+    - Application Load Balancer
+    - IAM
+    - AWS Organizations
+    - Organizations
+    - SCP
+    - KMS
+    - AWS Backup
+    - Backup
+    - Resilience Hub
+    - Artifact
+    - Shield
     - Verified Access
     - CloudFront Functions
     - Lambda@Edge
@@ -118,14 +124,57 @@ what_new_filter:
     - SSM
     - Incident Manager
     - Change Manager
-    - AWS Health
-    - AWS Personal Health Dashboard
-    - Service Quotas
     - Bedrock
     - Amazon Bedrock
-    - Bedrock Guardrails
-    - Bedrock Agents
-    - Bedrock Knowledge Bases
+
+  # Context words that make broad keywords relevant enough for What’s New.
+  relevance_keywords:
+    - console
+    - dashboard
+    - console experience
+    - dashboard experience
+    - new console
+    - console navigation
+    - security
+    - vulnerability
+    - CVE
+    - encryption
+    - deprecated
+    - deprecate
+    - end of support
+    - mandatory
+    - permission
+    - permissions
+    - policy
+    - authorization
+    - authentication
+    - behavior change
+    - breaking change
+    - data exposure
+    - sensitive data
+    - prompt injection
+    - guardrail
+    - guardrails
+    - appliance mode
+    - route propagation
+    - route table
+    - routing
+    - endpoint
+    - health check
+    - failover
+    - tunnel
+    - BGP
+    - landing zone
+    - account factory
+    - organizational unit
+    - log analytics
+    - logs
+    - alarm
+    - alarms
+    - metric
+    - metrics
+    - monitoring
+
   exclude_keywords:
     - HealthOmics
     - GameLift
