@@ -88,9 +88,6 @@ what_new_filter:
     - AWS Health
     - AWS Personal Health Dashboard
     - Service Quotas
-    - Bedrock Guardrails
-    - Bedrock Agents
-    - Bedrock Knowledge Bases
 
   # Broad service or acronym keywords. These need a relevance keyword below.
   contextual_keywords:
@@ -124,8 +121,6 @@ what_new_filter:
     - SSM
     - Incident Manager
     - Change Manager
-    - Bedrock
-    - Amazon Bedrock
 
   # Context words that make broad keywords relevant enough for What’s New.
   relevance_keywords:
@@ -182,6 +177,11 @@ what_new_filter:
     - SageMaker
     - Nova
     - Q Business
+    - Bedrock
+    - Amazon Bedrock
+    - Bedrock Guardrails
+    - Bedrock Agents
+    - Bedrock Knowledge Bases
 
 severity_model:
   critical_services:
