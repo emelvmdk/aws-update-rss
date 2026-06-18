@@ -47,6 +47,11 @@ what_new_filter:
     - Resolver
     - CloudFront
     - Load Balancer
+    - Elastic Load Balancing
+    - ALB
+    - Application Load Balancer
+    - NLB
+    - Network Load Balancer
     - Security Hub
     - GuardDuty
     - Inspector
@@ -54,11 +59,27 @@ what_new_filter:
     - Control Tower
     - IAM Identity Center
     - Organizations
+    - IAM
+    - Service Control Policy
+    - SCP
     - KMS
     - AWS Backup
     - Resilience Hub
     - Artifact
     - RAM
+    - CloudTrail
+    - AWS WAF
+    - WAF
+    - Shield
+    - AWS Shield
+    - Firewall Manager
+    - AWS Firewall Manager
+    - Verified Access
+    - CloudFront Functions
+    - Lambda@Edge
+    - EventBridge
+    - Systems Manager
+    - SSM
     - Bedrock
     - Amazon Bedrock
     - Bedrock Guardrails
@@ -83,24 +104,37 @@ severity_rules:
     - end of support
     - mandatory
     - IAM
+    - SCP
+    - Service Control Policy
     - KMS
     - Control Tower
     - Security Hub
     - Network Firewall
     - Transit Gateway
     - Direct Connect
+    - CloudTrail
+    - AWS WAF
+    - WAF
+    - Shield
+    - Firewall Manager
     - Bedrock Guardrails
   medium:
     - CloudWatch
     - Config
     - Backup
-    - WAF
     - Route 53
     - PrivateLink
     - Load Balancer
+    - Elastic Load Balancing
+    - ALB
+    - NLB
     - CloudFront
+    - Verified Access
     - VPN
     - VPC
+    - EventBridge
+    - Systems Manager
+    - SSM
     - Bedrock
     - Amazon Bedrock
   low:
