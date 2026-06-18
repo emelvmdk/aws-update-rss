@@ -1,0 +1,31 @@
+feeds:
+  - name: "CloudFront Document Releases"
+    url: "https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/amazon-cf-doc-releases.rss"
+    category: "edge"
+    filter_mode: "all"
+    enabled: true
+  - name: "Amazon Route 53 Release Notes"
+    url: "https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/amazon-route-53-release-notes.rss"
+    category: "dns"
+    filter_mode: "all"
+    enabled: true
+  - name: "Application Load Balancer Release Notes"
+    url: "https://docs.aws.amazon.com/elasticloadbalancing/latest/application/application-load-balancer-release-notes.rss"
+    category: "load-balancing"
+    filter_mode: "all"
+    enabled: true
+  - name: "Network Load Balancer Release Notes"
+    url: "https://docs.aws.amazon.com/elasticloadbalancing/latest/network/network-load-balancer-release-notes.rss"
+    category: "load-balancing"
+    filter_mode: "all"
+    enabled: true
+  - name: "Verified Access User Guide Updates"
+    url: "https://docs.aws.amazon.com/verified-access/latest/ug/neutrino-user-guide-updates.rss"
+    category: "zero-trust"
+    filter_mode: "all"
+    enabled: true
+  - name: "AWS WAF What's New"
+    url: "https://docs.aws.amazon.com/waf/latest/developerguide/aws-waf-doc-history.rss"
+    category: "edge-security"
+    filter_mode: "all"
+    enabled: true
