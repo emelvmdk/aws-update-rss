@@ -495,8 +495,6 @@ def item_to_rss_description(
         lines.append(f"<p><strong>요약</strong>: {html.escape(truncate(detail, max_detail_chars))}</p>")
     if link:
         lines.append(f"<p><strong>링크</strong>: <a href=\"{html.escape(link)}\">{html.escape(link)}</a></p>")
-    if source_link and source_link != link:
-        lines.append(f"<p><strong>영어 원문 링크</strong>: <a href=\"{html.escape(source_link)}\">{html.escape(source_link)}</a></p>")
 
     return "\n".join(lines)
 
