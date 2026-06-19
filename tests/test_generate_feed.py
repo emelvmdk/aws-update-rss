@@ -8,7 +8,6 @@ from requests import Response
 from generate_feed import (
     BORDERLINE_SCORE_REASON,
     HIGH_SCORE_MISSING_URL_HINT_REASON,
-    LOW_SCORE_SKIP_REASON,
     build_rss,
     clean_text,
     decode_response_text,
@@ -165,7 +164,7 @@ def test_broad_keyword_requires_strong_score_and_url_hint() -> None:
     assert "VPC" in matches_high_no_url
     assert reason_high_no_url == HIGH_SCORE_MISSING_URL_HINT_REASON
 
-    included_low, matches_low, reason_low = evaluate_include(
+    included_weak, matches_weak, reason_weak = evaluate_include(
         {
             "title": "Console update",
             "summary": "VPC workflow notes are available.",
@@ -174,9 +173,9 @@ def test_broad_keyword_requires_strong_score_and_url_hint() -> None:
         feed,
         STRICT_FILTER_CONFIG,
     )
-    assert included_low is False
-    assert "VPC" in matches_low
-    assert reason_low == LOW_SCORE_SKIP_REASON
+    assert included_weak is False
+    assert "VPC" in matches_weak
+    assert reason_weak == BORDERLINE_SCORE_REASON
 
 
 def test_exclude_keywords_win() -> None:
