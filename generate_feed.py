@@ -26,7 +26,7 @@ REVIEW_JSON_FILE = PUBLIC_DIR / "review.json"
 URL_HINT_SKIP_REASON = "url_service_hint_missing"
 LOW_SCORE_SKIP_REASON = "low_keyword_score"
 BORDERLINE_SCORE_REASON = "borderline_keyword_score"
-PASSED_WITHOUT_URL_HINT_REASON = "passed_without_url_hint"
+HIGH_SCORE_MISSING_URL_HINT_REASON = "high_score_missing_url_hint"
 URL_HINT_DEFAULT_CATEGORIES = {"whats-new", "operations"}
 BROAD_KEYWORD_REVIEW_SCORE = 4
 BROAD_KEYWORD_PASS_SCORE = 5
@@ -314,9 +314,9 @@ def evaluate_include(entry: Any, feed: dict[str, Any], config: dict[str, Any]) -
                 if score < BROAD_KEYWORD_REVIEW_SCORE:
                     return False, matches, LOW_SCORE_SKIP_REASON
                 if score < BROAD_KEYWORD_PASS_SCORE:
-                    return True, matches, BORDERLINE_SCORE_REASON
+                    return False, matches, BORDERLINE_SCORE_REASON
                 if not has_url_hint:
-                    return True, matches, PASSED_WITHOUT_URL_HINT_REASON
+                    return False, matches, HIGH_SCORE_MISSING_URL_HINT_REASON
             return True, matches, ""
         return False, [], "no_keyword_match"
 
@@ -664,7 +664,7 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
             if published_at < cutoff:
                 continue
             included, matches, review_reason = evaluate_include(entry, feed, config)
-            if review_reason in {URL_HINT_SKIP_REASON, LOW_SCORE_SKIP_REASON, BORDERLINE_SCORE_REASON, PASSED_WITHOUT_URL_HINT_REASON}:
+            if review_reason in {URL_HINT_SKIP_REASON, LOW_SCORE_SKIP_REASON, BORDERLINE_SCORE_REASON, HIGH_SCORE_MISSING_URL_HINT_REASON}:
                 review_items.append(review_candidate_from_entry(entry, feed, matches, published_at, review_reason))
             if not included:
                 continue
@@ -780,7 +780,7 @@ def write_review(review_items: list[dict[str, Any]]) -> None:
 <head><meta charset=\"utf-8\"><title>AWS Update RSS Review</title></head>
 <body>
   <h1>Review candidates</h1>
-  <p>넓은 키워드 점수가 낮거나, 경계 점수이거나, 통과했지만 URL 힌트가 약한 항목을 표시합니다.</p>
+  <p>넓은 키워드 점수가 낮거나, 경계 점수이거나, 고점수지만 URL 힌트가 약해 스킵된 항목을 표시합니다.</p>
   <p>JSON: <a href=\"./review.json\">review.json</a></p>
   <p>Count: {len(review_items)}</p>
   <table border=\"1\" cellpadding=\"6\" cellspacing=\"0\">
