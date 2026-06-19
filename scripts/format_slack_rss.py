@@ -81,10 +81,18 @@ def format_description(item: ET.Element) -> str:
     set_hidden_field(item, "sourceLink", source_link)
     set_hidden_field(item, "displayLink", link)
 
-    lines: list[str] = [f"{emoji} 중요도: {severity}"]
+    lines: list[str] = [f"<p>{emoji} 중요도: {html.escape(severity)}</p>"]
 
     if summary:
-        lines.extend(["", "요약", truncate(summary, MAX_SUMMARY_CHARS)])
+        lines.append(f"<p>요약<br>{html.escape(truncate(summary, MAX_SUMMARY_CHARS))}</p>")
+
+    if link:
+        escaped_link = html.escape(link)
+        lines.append(f"<p>🔗 <a href=\"{escaped_link}\">업데이트 원문 보기</a></p>")
+
+    if source_link and source_link != link:
+        escaped_source_link = html.escape(source_link)
+        lines.append(f"<p>🌐 <a href=\"{escaped_source_link}\">영어 원문 보기</a></p>")
 
     return "\n".join(lines)
 
