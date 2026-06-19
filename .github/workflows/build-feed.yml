@@ -1,6 +1,9 @@
 name: Build filtered AWS update RSS
 
 on:
+  push:
+    branches:
+      - main
   schedule:
     # Wakes up every 5 minutes and lets scripts/schedule_gate.py catch up
     # missed KST target slots: 08:13, 12:13, and 16:13.
