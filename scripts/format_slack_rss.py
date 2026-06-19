@@ -77,12 +77,10 @@ def format_description(item: ET.Element) -> str:
 
     set_hidden_field(item, "severity", severity)
     set_hidden_field(item, "severityReason", reason)
+    set_hidden_field(item, "category", category)
 
     lines: list[str] = []
-    lines.append(
-        f"<p>{emoji} <strong>중요도</strong>: {html.escape(severity)} "
-        f"· <strong>분류</strong>: {html.escape(category)}</p>"
-    )
+    lines.append(f"<p>{emoji} <strong>중요도</strong>: {html.escape(severity)}</p>")
 
     if summary:
         lines.append(f"<p>🧭 <strong>요약</strong>: {html.escape(truncate(summary, MAX_SUMMARY_CHARS))}</p>")
