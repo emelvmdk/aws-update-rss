@@ -7,7 +7,8 @@ from xml.etree import ElementTree as ET
 
 FEED_PATH = Path("public/feed.xml")
 MAX_SUMMARY_CHARS = 420
-MAX_REASON_CHARS = 160
+AWSUPDATE_NS = "https://github.com/emelvmdk/aws-update-rss/ns"
+ET.register_namespace("awsupdate", AWSUPDATE_NS)
 
 
 SEVERITY_EMOJI = {
@@ -51,6 +52,17 @@ def category_from_item(item: ET.Element) -> str:
     return clean_html_text(match.group(1)) if match else "general"
 
 
+def set_hidden_field(item: ET.Element, name: str, value: str) -> None:
+    tag = f"{{{AWSUPDATE_NS}}}{name}"
+    existing = item.find(tag)
+    if not value:
+        if existing is not None:
+            item.remove(existing)
+        return
+    node = existing if existing is not None else ET.SubElement(item, tag)
+    node.text = value
+
+
 def format_description(item: ET.Element) -> str:
     description_node = item.find("description")
     old_description = description_node.text if description_node is not None and description_node.text else ""
@@ -63,6 +75,9 @@ def format_description(item: ET.Element) -> str:
     category = category_from_item(item)
     emoji = SEVERITY_EMOJI.get(severity, "⚪")
 
+    set_hidden_field(item, "severity", severity)
+    set_hidden_field(item, "severityReason", reason)
+
     lines: list[str] = []
     lines.append(
         f"<p>{emoji} <strong>중요도</strong>: {html.escape(severity)} "
@@ -71,9 +86,6 @@ def format_description(item: ET.Element) -> str:
 
     if summary:
         lines.append(f"<p>🧭 <strong>요약</strong>: {html.escape(truncate(summary, MAX_SUMMARY_CHARS))}</p>")
-
-    if reason:
-        lines.append(f"<p>🔎 <strong>근거</strong>: {html.escape(truncate(reason, MAX_REASON_CHARS))}</p>")
 
     if link:
         escaped_link = html.escape(link)
