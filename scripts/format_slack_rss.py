@@ -32,13 +32,13 @@ def truncate(value: str, limit: int) -> str:
 
 
 def extract_field(description: str, label: str) -> str:
-    pattern = rf"<strong>{re.escape(label)}</strong>:\s*(.*?)(?:</p>|$)"
+    pattern = rf"<(?:strong|b)>{re.escape(label)}</(?:strong|b)>:\s*(.*?)(?:</p>|$)"
     match = re.search(pattern, description or "", flags=re.IGNORECASE | re.DOTALL)
     return clean_html_text(match.group(1)) if match else ""
 
 
 def extract_href_for_label(description: str, label: str) -> str:
-    pattern = rf"<strong>{re.escape(label)}</strong>:\s*<a\s+href=\"([^\"]+)\""
+    pattern = rf"<(?:strong|b)>{re.escape(label)}</(?:strong|b)>:\s*<a\s+href=\"([^\"]+)\""
     match = re.search(pattern, description or "", flags=re.IGNORECASE | re.DOTALL)
     return html.unescape(match.group(1)).strip() if match else ""
 
@@ -81,10 +81,10 @@ def format_description(item: ET.Element) -> str:
     set_hidden_field(item, "sourceLink", source_link)
     set_hidden_field(item, "displayLink", link)
 
-    lines: list[str] = [f"<p>{emoji} 중요도: {html.escape(severity)}</p>"]
+    lines: list[str] = [f"<p>{emoji} <b>중요도</b>: {html.escape(severity)}</p>"]
 
     if summary:
-        lines.append(f"<p>요약<br>{html.escape(truncate(summary, MAX_SUMMARY_CHARS))}</p>")
+        lines.append(f"<p><b>요약</b><br>{html.escape(truncate(summary, MAX_SUMMARY_CHARS))}</p>")
 
     if link:
         escaped_link = html.escape(link)
