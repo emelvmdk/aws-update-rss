@@ -2,9 +2,9 @@ name: Build filtered AWS update RSS
 
 on:
   schedule:
-    # Runs at 08:13, 12:13, and 16:13 KST (23:13, 03:13, 07:13 UTC)
-    # Avoids the top-of-hour GitHub Actions schedule congestion window.
-    - cron: "13 3,7,23 * * *"
+    # Wakes up every 5 minutes and lets scripts/schedule_gate.py catch up
+    # missed KST target slots: 08:13, 12:13, and 16:13.
+    - cron: "*/5 * * * *"
   workflow_dispatch:
     inputs:
       include_test_item:
@@ -23,39 +23,52 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.schedule_gate.outputs.should_run }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Decide whether this tick should build
+        id: schedule_gate
+        run: |
+          python scripts/schedule_gate.py decide
+
       - name: Set up Python
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' }}
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' }}
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
       - name: Run tests
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' }}
         run: |
           pytest -q
 
       - name: Generate RSS feed
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' }}
         run: |
           python generate_feed.py
 
       - name: Format RSS for Slack readability
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' }}
         run: |
           python scripts/format_slack_rss.py
 
       - name: Add source name to RSS item titles
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' }}
         run: |
           python - <<'PY'
           import html
@@ -100,7 +113,7 @@ jobs:
           PY
 
       - name: Add manual Slack RSS test item
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_test_item == 'true' }}
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.include_test_item == 'true' }}
         run: |
           python - <<'PY'
           from datetime import datetime, timezone
@@ -145,15 +158,28 @@ jobs:
           print(f"Added manual Slack RSS test item manual-slack-rss-test-{timestamp}")
           PY
 
+      - name: Record run metadata
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' }}
+        env:
+          TARGET_TYPE: ${{ steps.schedule_gate.outputs.target_type }}
+          TARGET_SLOT_KST: ${{ steps.schedule_gate.outputs.target_slot_kst }}
+          DECISION_REASON: ${{ steps.schedule_gate.outputs.reason }}
+          EVENT_SCHEDULE: ${{ steps.schedule_gate.outputs.event_schedule }}
+        run: |
+          python scripts/schedule_gate.py record
+
       - name: Configure GitHub Pages
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' }}
         uses: actions/configure-pages@v5
 
       - name: Upload GitHub Pages artifact
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' }}
         uses: actions/upload-pages-artifact@v3
         with:
           path: public
 
   deploy:
+    if: ${{ needs.build.outputs.should_run == 'true' }}
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
