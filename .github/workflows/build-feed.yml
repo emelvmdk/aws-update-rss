@@ -51,6 +51,10 @@ jobs:
         run: |
           python generate_feed.py
 
+      - name: Format RSS for Slack readability
+        run: |
+          python scripts/format_slack_rss.py
+
       - name: Add source name to RSS item titles
         run: |
           python - <<'PY'
