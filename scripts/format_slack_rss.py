@@ -80,10 +80,10 @@ def format_description(item: ET.Element) -> str:
     set_hidden_field(item, "category", category)
 
     lines: list[str] = []
-    lines.append(f"<p>{emoji} <strong>중요도</strong>: {html.escape(severity)}</p>")
+    lines.append(f"<p>{emoji} <strong>중요도: {html.escape(severity)}</strong></p>")
 
     if summary:
-        lines.append(f"<p>🧭 <strong>요약</strong>: {html.escape(truncate(summary, MAX_SUMMARY_CHARS))}</p>")
+        lines.append(f"<p><strong>요약</strong><br>{html.escape(truncate(summary, MAX_SUMMARY_CHARS))}</p>")
 
     if link:
         escaped_link = html.escape(link)
