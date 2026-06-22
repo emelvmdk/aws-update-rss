@@ -6,7 +6,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 
 FEED_PATH = Path("public/feed.xml")
-MAX_SUMMARY_CHARS = 420
+MAX_SUMMARY_CHARS = 220
 AWSUPDATE_NS = "https://github.com/emelvmdk/aws-update-rss/ns"
 ET.register_namespace("awsupdate", AWSUPDATE_NS)
 
@@ -86,13 +86,7 @@ def format_description(item: ET.Element) -> str:
     if summary:
         lines.append(f"<p><b>요약</b><br>{html.escape(truncate(summary, MAX_SUMMARY_CHARS))}</p>")
 
-    if link:
-        escaped_link = html.escape(link)
-        lines.append(f"<p>🔗 <a href=\"{escaped_link}\">업데이트 원문 보기</a></p>")
-
-    if source_link and source_link != link:
-        escaped_source_link = html.escape(source_link)
-        lines.append(f"<p>🌐 <a href=\"{escaped_source_link}\">영어 원문 보기</a></p>")
+    lines.append("<p>🔗 원문은 제목을 클릭해서 확인</p>")
 
     return "\n".join(lines)
 
