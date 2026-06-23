@@ -52,6 +52,24 @@ def set_child_text(item: ET.Element, name: str, value: str, **attrib: str) -> No
     child.text = value
 
 
+def source_items_from(channel: ET.Element) -> list[ET.Element]:
+    return [item for item in channel.findall("item") if not child_text(item, "guid").startswith("slack-replay-")]
+
+
+def select_items(channel: ET.Element, count: int, guid_prefix: str) -> list[ET.Element]:
+    source_items = source_items_from(channel)
+    guid_prefix = clean_text(guid_prefix)
+
+    if guid_prefix:
+        matched = [item for item in source_items if child_text(item, "guid").startswith(guid_prefix)]
+        limit = count or DEFAULT_MAX_REPLAY_ITEMS
+        return matched[:limit]
+
+    if count <= 0:
+        return []
+    return source_items[:count]
+
+
 def clone_for_replay(source_item: ET.Element, replay_id: str, index: int, now: datetime) -> ET.Element:
     item = copy.deepcopy(source_item)
 
@@ -68,21 +86,16 @@ def clone_for_replay(source_item: ET.Element, replay_id: str, index: int, now: d
     return item
 
 
-def add_replay_items(count: int) -> int:
-    if count <= 0:
-        print("No Slack replay items requested.")
-        return 0
-
+def add_replay_items(count: int, guid_prefix: str) -> int:
     tree = ET.parse(FEED_PATH)
     root = tree.getroot()
     channel = root.find("channel")
     if channel is None:
         raise RuntimeError("RSS channel element was not found")
 
-    source_items = [item for item in channel.findall("item") if not child_text(item, "guid").startswith("slack-replay-")]
-    selected = source_items[:count]
+    selected = select_items(channel, count, guid_prefix)
     if not selected:
-        print("No RSS items available for Slack replay.")
+        print("No RSS items matched the Slack replay request.")
         return 0
 
     now = datetime.now(timezone.utc)
@@ -104,7 +117,8 @@ def add_replay_items(count: int) -> int:
 
 def main() -> None:
     count = parse_count(env("SLACK_REPLAY_RECENT_ITEMS", "0"))
-    add_replay_items(count)
+    guid_prefix = env("SLACK_REPLAY_GUID_PREFIX", "")
+    add_replay_items(count, guid_prefix)
 
 
 if __name__ == "__main__":
