@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 KST = ZoneInfo("Asia/Seoul")
 TARGET_SLOTS = ((8, 13), (12, 13), (16, 13))
 DEFAULT_CATCH_UP_MINUTES = 180
+DEFAULT_REPLAY_RELEASE_INTERVAL_MINUTES = 15
 
 
 def env(name: str, default: str = "") -> str:
@@ -53,9 +54,48 @@ def last_run_url() -> str:
     return f"{base_url}/last-run.json"
 
 
+def replay_queue_url() -> str:
+    configured = env("SLACK_REPLAY_QUEUE_URL")
+    if configured:
+        return configured
+
+    base_url = pages_base_url()
+    if not base_url:
+        return ""
+
+    return f"{base_url}/slack-replay-queue.json"
+
+
 def with_cache_bust(url: str) -> str:
     separator = "&" if "?" in url else "?"
     return f"{url}{separator}t={int(time.time())}"
+
+
+def fetch_json_url(url: str, label: str) -> dict[str, Any]:
+    if not url:
+        return {}
+
+    request = Request(
+        with_cache_bust(url),
+        headers={
+            "Accept": "application/json",
+            "Cache-Control": "no-cache",
+            "User-Agent": "aws-update-rss-schedule-gate",
+        },
+    )
+
+    try:
+        with urlopen(request, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return data if isinstance(data, dict) else {}
+    except HTTPError as exc:
+        if exc.code == 404:
+            return {}
+        print(f"Could not fetch {label}: HTTP {exc.code}")
+        return {}
+    except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        print(f"Could not fetch {label}: {exc}")
+        return {}
 
 
 def load_event_schedule() -> str:
@@ -72,30 +112,11 @@ def load_event_schedule() -> str:
 
 
 def fetch_last_run() -> dict[str, Any]:
-    url = last_run_url()
-    if not url:
-        return {}
+    return fetch_json_url(last_run_url(), "last-run.json")
 
-    request = Request(
-        with_cache_bust(url),
-        headers={
-            "Accept": "application/json",
-            "Cache-Control": "no-cache",
-            "User-Agent": "aws-update-rss-schedule-gate",
-        },
-    )
 
-    try:
-        with urlopen(request, timeout=10) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        if exc.code == 404:
-            return {}
-        print(f"Could not fetch last-run.json: HTTP {exc.code}")
-        return {}
-    except (OSError, URLError, TimeoutError, json.JSONDecodeError) as exc:
-        print(f"Could not fetch last-run.json: {exc}")
-        return {}
+def fetch_replay_queue() -> dict[str, Any]:
+    return fetch_json_url(replay_queue_url(), "slack-replay-queue.json")
 
 
 def slot_at(day: date, hour: int, minute: int) -> datetime:
@@ -112,6 +133,40 @@ def latest_due_slot(reference: datetime) -> datetime | None:
                 candidates.append(candidate)
 
     return max(candidates) if candidates else None
+
+
+def parse_utc(value: str) -> datetime | None:
+    value = str(value or "").strip()
+    if not value:
+        return None
+    try:
+        normalized = value.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(normalized)
+        return (dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+    except ValueError:
+        return None
+
+
+def replay_queue_due(queue: dict[str, Any], reference_utc: datetime) -> tuple[bool, str, str]:
+    pending = queue.get("pending")
+    if not isinstance(pending, list) or not pending:
+        return False, "", "no queued Slack replay items"
+
+    try:
+        interval_minutes = int(queue.get("release_interval_minutes") or DEFAULT_REPLAY_RELEASE_INTERVAL_MINUTES)
+    except (TypeError, ValueError):
+        interval_minutes = DEFAULT_REPLAY_RELEASE_INTERVAL_MINUTES
+
+    last_released = parse_utc(str(queue.get("last_released_at") or ""))
+    if last_released is None:
+        return True, f"slack-replay/{reference_utc.isoformat()}", f"queued Slack replay item is pending; no previous release; pending={len(pending)}"
+
+    age = reference_utc - last_released
+    if age >= timedelta(minutes=interval_minutes):
+        return True, f"slack-replay/{reference_utc.isoformat()}", f"queued Slack replay item is due; age={int(age.total_seconds() // 60)}m; pending={len(pending)}"
+
+    remaining = interval_minutes - int(age.total_seconds() // 60)
+    return False, "", f"queued Slack replay item is waiting for release interval; pending={len(pending)}; remaining≈{remaining}m"
 
 
 def append_step_summary(lines: list[str]) -> None:
@@ -175,15 +230,24 @@ def decide() -> None:
     catch_up_minutes = int(env("SCHEDULE_CATCH_UP_MINUTES", str(DEFAULT_CATCH_UP_MINUTES)))
     due_slot = latest_due_slot(current_kst)
     last_run = fetch_last_run()
+    replay_queue = fetch_replay_queue()
+    replay_due, replay_target, replay_reason = replay_queue_due(replay_queue, current_utc)
     last_scheduled_slot = str(last_run.get("last_scheduled_slot_kst") or last_run.get("last_slot_kst") or "")
     last_run_state_url = last_run_url()
+    replay_queue_state_url = replay_queue_url()
 
     should_run = False
+    target_type = "schedule"
     target_slot = ""
     reason = "no due slot"
     age_minutes = ""
 
-    if due_slot is not None:
+    if replay_due:
+        should_run = True
+        target_type = "slack_replay"
+        target_slot = replay_target
+        reason = replay_reason
+    elif due_slot is not None:
         target_slot = due_slot.isoformat()
         age = current_kst - due_slot
         age_minutes = str(int(age.total_seconds() // 60))
@@ -195,10 +259,12 @@ def decide() -> None:
         else:
             should_run = True
             reason = f"slot needs processing: {target_slot}"
+    else:
+        reason = replay_reason or reason
 
     outputs = {
         "should_run": "true" if should_run else "false",
-        "target_type": "schedule",
+        "target_type": target_type,
         "target_slot_kst": target_slot,
         "reason": reason,
         "event_schedule": event_schedule,
@@ -212,13 +278,15 @@ def decide() -> None:
             "### Schedule gate",
             "",
             f"- decision: {'run' if should_run else 'skip'}",
-            "- type: schedule",
+            f"- type: {target_type}",
             f"- event_schedule: {event_schedule}",
             f"- target_slot_kst: {target_slot or '(none)'}",
             f"- age_minutes: {age_minutes or '(none)'}",
             f"- catch_up_minutes: {catch_up_minutes}",
             f"- last_scheduled_slot_kst: {last_scheduled_slot or '(none)'}",
             f"- last_run_url: {last_run_state_url or '(none)'}",
+            f"- replay_queue_url: {replay_queue_state_url or '(none)'}",
+            f"- replay_queue_reason: {replay_reason or '(none)'}",
             f"- reason: {reason}",
             f"- kst_now: {current_kst.isoformat()}",
             f"- utc_now: {current_utc.isoformat()}",
@@ -274,6 +342,14 @@ def record() -> None:
                 "last_manual_run_kst": current_kst.isoformat(),
                 "last_manual_run_utc": current_utc.isoformat(),
                 "last_manual_run_id": env("GITHUB_RUN_ID"),
+            }
+        )
+    elif target_type == "slack_replay":
+        data.update(
+            {
+                "last_slack_replay_run_kst": current_kst.isoformat(),
+                "last_slack_replay_run_utc": current_utc.isoformat(),
+                "last_slack_replay_run_id": env("GITHUB_RUN_ID"),
             }
         )
 
