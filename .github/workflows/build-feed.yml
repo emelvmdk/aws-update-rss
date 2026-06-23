@@ -96,7 +96,7 @@ jobs:
           python scripts/add_slack_replay_items.py
 
       - name: Add manual Slack RSS test item
-        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.include_test_item == 'true' }}
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.include_test_item == 'true' && inputs.replay_recent_items == '0' && inputs.replay_guid_prefix == '' && inputs.replay_guid_prefixes == '' }}
         run: |
           python - <<'PY'
           from datetime import datetime, timezone
