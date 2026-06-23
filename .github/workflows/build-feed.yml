@@ -29,6 +29,11 @@ on:
           - "3"
           - "5"
           - "10"
+      replay_guid_prefix:
+        description: "Optional GUID prefix from slack-debug.html to replay a specific missed item"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -77,9 +82,10 @@ jobs:
           python generate_feed.py
 
       - name: Add Slack RSS replay items
-        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && inputs.replay_recent_items != '0' }}
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && (inputs.replay_recent_items != '0' || inputs.replay_guid_prefix != '') }}
         env:
           SLACK_REPLAY_RECENT_ITEMS: ${{ inputs.replay_recent_items }}
+          SLACK_REPLAY_GUID_PREFIX: ${{ inputs.replay_guid_prefix }}
         run: |
           python scripts/add_slack_replay_items.py
 
