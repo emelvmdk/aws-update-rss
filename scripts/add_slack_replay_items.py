@@ -10,7 +10,7 @@ from urllib.parse import urlparse, urlunparse
 from xml.etree import ElementTree as ET
 
 FEED_PATH = Path("public/feed.xml")
-DEFAULT_MAX_REPLAY_ITEMS = 10
+MAX_REPLAY_ITEMS_PER_RUN = 1
 
 
 def env(name: str, default: str = "") -> str:
@@ -21,12 +21,11 @@ def clean_text(value: str | None) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
-def parse_count(value: str) -> int:
+def wants_recent_replay(value: str) -> bool:
     try:
-        count = int(value)
+        return int(value) > 0
     except ValueError:
-        return 0
-    return max(0, min(count, DEFAULT_MAX_REPLAY_ITEMS))
+        return False
 
 
 def unique_link(link: str, replay_id: str) -> str:
@@ -56,69 +55,70 @@ def source_items_from(channel: ET.Element) -> list[ET.Element]:
     return [item for item in channel.findall("item") if not child_text(item, "guid").startswith("slack-replay-")]
 
 
-def select_items(channel: ET.Element, count: int, guid_prefix: str) -> list[ET.Element]:
+def select_one_item(channel: ET.Element, replay_recent: bool, guid_prefix: str) -> ET.Element | None:
     source_items = source_items_from(channel)
     guid_prefix = clean_text(guid_prefix)
 
     if guid_prefix:
-        matched = [item for item in source_items if child_text(item, "guid").startswith(guid_prefix)]
-        limit = count or DEFAULT_MAX_REPLAY_ITEMS
-        return matched[:limit]
+        for item in source_items:
+            if child_text(item, "guid").startswith(guid_prefix):
+                return item
+        return None
 
-    if count <= 0:
-        return []
-    return source_items[:count]
+    if replay_recent:
+        return source_items[0] if source_items else None
+
+    return None
 
 
-def clone_for_replay(source_item: ET.Element, replay_id: str, index: int, now: datetime) -> ET.Element:
+def clone_for_replay(source_item: ET.Element, replay_id: str, now: datetime) -> ET.Element:
     item = copy.deepcopy(source_item)
 
     original_title = child_text(source_item, "title") or "Untitled AWS update"
-    original_guid = child_text(source_item, "guid") or f"missing-guid-{index}"
+    original_guid = child_text(source_item, "guid") or "missing-guid"
     original_link = child_text(source_item, "link")
-    replay_guid = f"slack-replay-{replay_id}-{index}-{original_guid[:24]}"
+    replay_guid = f"slack-replay-{replay_id}-{original_guid[:24]}"
 
     set_child_text(item, "title", f"[재발송] {original_title}")
-    set_child_text(item, "link", unique_link(original_link, f"{replay_id}-{index}"))
+    set_child_text(item, "link", unique_link(original_link, replay_id))
     set_child_text(item, "guid", replay_guid, isPermaLink="false")
     set_child_text(item, "pubDate", format_datetime(now))
 
     return item
 
 
-def add_replay_items(count: int, guid_prefix: str) -> int:
+def add_replay_item(replay_recent: bool, guid_prefix: str) -> int:
     tree = ET.parse(FEED_PATH)
     root = tree.getroot()
     channel = root.find("channel")
     if channel is None:
         raise RuntimeError("RSS channel element was not found")
 
-    selected = select_items(channel, count, guid_prefix)
-    if not selected:
-        print("No RSS items matched the Slack replay request.")
+    selected = select_one_item(channel, replay_recent, guid_prefix)
+    if selected is None:
+        print("No RSS item matched the Slack replay request.")
         return 0
 
     now = datetime.now(timezone.utc)
     replay_id = env("GITHUB_RUN_ID") or now.strftime("%Y%m%d%H%M%S")
-    replay_items = [clone_for_replay(item, replay_id, index + 1, now) for index, item in enumerate(selected)]
+    replay_item = clone_for_replay(selected, replay_id, now)
 
     first_item = channel.find("item")
     insert_index = list(channel).index(first_item) if first_item is not None else len(list(channel))
-    for offset, item in enumerate(replay_items):
-        channel.insert(insert_index + offset, item)
+    channel.insert(insert_index, replay_item)
 
     FEED_PATH.write_text(
         ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8"),
         encoding="utf-8",
     )
-    print(f"Added {len(replay_items)} Slack replay item(s).")
-    return len(replay_items)
+    print(f"Added {MAX_REPLAY_ITEMS_PER_RUN} Slack replay item. Run again for another missed item.")
+    return MAX_REPLAY_ITEMS_PER_RUN
 
 
 def main() -> None:
-    count = parse_count(env("SLACK_REPLAY_RECENT_ITEMS", "0"))
+    replay_recent = wants_recent_replay(env("SLACK_REPLAY_RECENT_ITEMS", "0"))
     guid_prefix = env("SLACK_REPLAY_GUID_PREFIX", "")
-    add_replay_items(count, guid_prefix)
+    add_replay_item(replay_recent, guid_prefix)
 
 
 if __name__ == "__main__":
