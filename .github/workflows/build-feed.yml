@@ -19,18 +19,15 @@ on:
           - "false"
           - "true"
       replay_recent_items:
-        description: "Replay the newest N RSS items with fresh GUIDs/links for Slack RSS recovery"
+        description: "Replay only one newest RSS item. Run again for another missed item."
         required: false
         default: "0"
         type: choice
         options:
           - "0"
           - "1"
-          - "3"
-          - "5"
-          - "10"
       replay_guid_prefix:
-        description: "Optional GUID prefix from slack-debug.html to replay a specific missed item"
+        description: "Optional GUID prefix from slack-debug.html to replay one specific missed item"
         required: false
         default: ""
         type: string
@@ -81,7 +78,7 @@ jobs:
         run: |
           python generate_feed.py
 
-      - name: Add Slack RSS replay items
+      - name: Add Slack RSS replay item
         if: ${{ steps.schedule_gate.outputs.should_run == 'true' && github.event_name == 'workflow_dispatch' && (inputs.replay_recent_items != '0' || inputs.replay_guid_prefix != '') }}
         env:
           SLACK_REPLAY_RECENT_ITEMS: ${{ inputs.replay_recent_items }}
