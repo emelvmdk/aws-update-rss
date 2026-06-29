@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import format_datetime, parsedate_to_datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from xml.etree import ElementTree as ET
 
 import feedparser
@@ -30,6 +30,17 @@ HIGH_SCORE_MISSING_URL_HINT_REASON = "high_score_missing_url_hint"
 URL_HINT_DEFAULT_CATEGORIES = {"whats-new", "operations"}
 BROAD_KEYWORD_REVIEW_SCORE = 4
 BROAD_KEYWORD_PASS_SCORE = 5
+TRACKING_QUERY_PREFIXES = ("utm_",)
+TRACKING_QUERY_KEYS = {
+    "sc_channel",
+    "sc_campaign",
+    "sc_medium",
+    "sc_publisher",
+    "sc_content",
+    "trk",
+    "trkcampaign",
+    "ref",
+}
 
 DOC_SERVICE_NAMES = {
     "aws-backup": "AWS Backup",
@@ -86,6 +97,53 @@ def truncate(value: str, limit: int) -> str:
 def normalize_for_match(value: str) -> str:
     value = clean_text(value).lower()
     return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value)).strip()
+
+
+def canonical_url_for_dedupe(url: str) -> str:
+    url = clean_text(url)
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    query = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        lower_key = key.lower()
+        if lower_key in TRACKING_QUERY_KEYS or any(lower_key.startswith(prefix) for prefix in TRACKING_QUERY_PREFIXES):
+            continue
+        query.append((key, value))
+    normalized_path = re.sub(r"/+$", "", parsed.path or "/") or "/"
+    return urlunparse(
+        parsed._replace(
+            scheme=parsed.scheme.lower(),
+            netloc=parsed.netloc.lower(),
+            path=normalized_path,
+            query=urlencode(query, doseq=True),
+            fragment="",
+        )
+    )
+
+
+def display_dedupe_key(item: dict[str, Any]) -> str:
+    title = normalize_for_match(str(item.get("title", "")))
+    link = canonical_url_for_dedupe(str(item.get("link", "")))
+    category = normalize_for_match(str(item.get("category", "")))
+    return "|".join([category, title, link])
+
+
+def dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_guid: dict[str, dict[str, Any]] = {}
+    for item in items:
+        existing = by_guid.get(item["guid"])
+        if existing is None or item["published_at"] > existing["published_at"]:
+            by_guid[item["guid"]] = item
+
+    by_display: dict[str, dict[str, Any]] = {}
+    for item in by_guid.values():
+        key = display_dedupe_key(item)
+        existing = by_display.get(key)
+        if existing is None or item["published_at"] > existing["published_at"]:
+            by_display[key] = item
+
+    return sorted(by_display.values(), key=lambda item: item["published_at"], reverse=True)
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
@@ -709,8 +767,7 @@ def collect_items(config: dict[str, Any], feeds: list[dict[str, Any]]) -> tuple[
                 "severity_reasons": severity_reasons,
             })
 
-    deduped = {item["guid"]: item for item in items}
-    sorted_items = sorted(deduped.values(), key=lambda item: item["published_at"], reverse=True)
+    sorted_items = dedupe_items(items)
     sorted_review = sorted(review_items, key=lambda item: item["published_at"], reverse=True)
     max_review_items = int(config.get("output", {}).get("max_review_items", 100))
     return sorted_items[: int(config.get("output", {}).get("max_items", 100))], failures, sorted_review[:max_review_items]
