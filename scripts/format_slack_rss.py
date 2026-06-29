@@ -14,16 +14,9 @@ FEED_PATH = Path("public/feed.xml")
 SLACK_DEBUG_JSON_PATH = Path("public/slack-debug.json")
 SLACK_DEBUG_HTML_PATH = Path("public/slack-debug.html")
 MAX_SUMMARY_CHARS = 220
+MESSAGE_DIVIDER = "━━━━━━━━━━━━━━━━━━━━"
 AWSUPDATE_NS = "https://github.com/emelvmdk/aws-update-rss/ns"
 ET.register_namespace("awsupdate", AWSUPDATE_NS)
-
-
-SEVERITY_EMOJI = {
-    "Critical": "🔴",
-    "High": "🔴",
-    "Medium": "🟠",
-    "Low": "🟢",
-}
 
 
 def clean_html_text(value: str) -> str:
@@ -108,16 +101,18 @@ def format_description(item: ET.Element) -> str:
     link = clean_html_text(item.findtext("link") or "") or extract_href_for_label(old_description, "링크")
     source_link = extract_href_for_label(old_description, "영어 원문 링크")
     category = category_from_item(item)
-    emoji = SEVERITY_EMOJI.get(severity, "⚪")
 
+    # Keep these as hidden fields for debug/review, but do not show severity in Slack messages.
     set_hidden_field(item, "severity", severity)
     set_hidden_field(item, "severityReason", reason)
     set_hidden_field(item, "category", category)
     set_hidden_field(item, "sourceLink", source_link)
     set_hidden_field(item, "displayLink", link)
 
-    lines: list[str] = [f"<p>{emoji} {html.escape(severity)}</p>"]
+    lines: list[str] = [f"<p>{MESSAGE_DIVIDER}</p>"]
 
+    if category:
+        lines.append(f"<p><b>분류</b>: {html.escape(category)}</p>")
     if summary:
         lines.append(f"<p><b>핵심</b>: {html.escape(truncate(summary, MAX_SUMMARY_CHARS))}</p>")
 
