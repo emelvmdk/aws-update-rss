@@ -14,7 +14,7 @@ FEED_PATH = Path("public/feed.xml")
 SLACK_DEBUG_JSON_PATH = Path("public/slack-debug.json")
 SLACK_DEBUG_HTML_PATH = Path("public/slack-debug.html")
 MAX_SUMMARY_CHARS = 220
-MESSAGE_DIVIDER = "━━━━━━━━━━━━━━━━━━━━"
+MESSAGE_DIVIDER = "────────────"
 AWSUPDATE_NS = "https://github.com/emelvmdk/aws-update-rss/ns"
 ET.register_namespace("awsupdate", AWSUPDATE_NS)
 
@@ -109,12 +109,13 @@ def format_description(item: ET.Element) -> str:
     set_hidden_field(item, "sourceLink", source_link)
     set_hidden_field(item, "displayLink", link)
 
-    lines: list[str] = [f"<p>{MESSAGE_DIVIDER}</p>"]
+    lines: list[str] = ["<p><b>AWS Update</b></p>"]
 
     if category:
         lines.append(f"<p><b>분류</b>: {html.escape(category)}</p>")
     if summary:
         lines.append(f"<p><b>핵심</b>: {html.escape(truncate(summary, MAX_SUMMARY_CHARS))}</p>")
+    lines.append(f"<p>{MESSAGE_DIVIDER}</p>")
 
     return "\n".join(lines)
 
