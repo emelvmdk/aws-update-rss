@@ -10,7 +10,7 @@ from email.utils import format_datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree as ET
 
@@ -129,11 +129,12 @@ def normalize_queue(data: dict[str, Any]) -> dict[str, Any]:
 def unique_link(link: str, replay_id: str) -> str:
     link = clean_text(link)
     if not link:
-        return f"https://github.com/emelvmdk/aws-update-rss/actions#slack-replay-{replay_id}"
+        return f"https://github.com/emelvmdk/aws-update-rss/actions/runs/{replay_id}"
 
     parsed = urlparse(link)
-    fragment = f"slack-replay-{replay_id}"
-    return urlunparse(parsed._replace(fragment=fragment))
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    query.append(("aws-update-rss-replay", replay_id))
+    return urlunparse(parsed._replace(query=urlencode(query, doseq=True), fragment=""))
 
 
 def child_text(item: ET.Element, name: str) -> str:
