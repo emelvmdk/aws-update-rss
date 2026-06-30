@@ -7,7 +7,7 @@ import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from xml.etree import ElementTree as ET
 
 FEED_PATH = Path("public/feed.xml")
@@ -15,6 +15,8 @@ SLACK_DEBUG_JSON_PATH = Path("public/slack-debug.json")
 SLACK_DEBUG_HTML_PATH = Path("public/slack-debug.html")
 MAX_SUMMARY_CHARS = 220
 MESSAGE_DIVIDER = "────────────"
+SLACK_UNIQUE_LINK_KEY = "aws-update-rss-guid"
+INTERNAL_LINK_KEYS = {SLACK_UNIQUE_LINK_KEY, "aws-update-rss-replay"}
 AWSUPDATE_NS = "https://github.com/emelvmdk/aws-update-rss/ns"
 ET.register_namespace("awsupdate", AWSUPDATE_NS)
 
@@ -67,13 +69,39 @@ def hidden_field(item: ET.Element, name: str) -> str:
     return clean_html_text(item.findtext(f"{{{AWSUPDATE_NS}}}{name}") or "")
 
 
-def canonical_link_for_debug(link: str) -> str:
+def set_item_text(item: ET.Element, name: str, value: str, **attrib: str) -> None:
+    child = item.find(name)
+    if child is None:
+        child = ET.SubElement(item, name, attrib)
+    else:
+        child.attrib.update(attrib)
+    child.text = value
+
+
+def strip_internal_query_keys(link: str) -> str:
     link = clean_html_text(link)
     if not link:
         return ""
     parsed = urlparse(link)
-    # Ignore fragment because we may later add guid fragments to make Slack links unique.
-    return urlunparse(parsed._replace(fragment=""))
+    query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key not in INTERNAL_LINK_KEYS]
+    return urlunparse(parsed._replace(query=urlencode(query, doseq=True), fragment=""))
+
+
+def unique_link_for_slack(link: str, guid: str) -> str:
+    link = clean_html_text(link)
+    guid = clean_html_text(guid)
+    if not link or not guid:
+        return link
+
+    base_link = strip_internal_query_keys(link)
+    parsed = urlparse(base_link)
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    query.append((SLACK_UNIQUE_LINK_KEY, guid[:16]))
+    return urlunparse(parsed._replace(query=urlencode(query, doseq=True), fragment=""))
+
+
+def canonical_link_for_debug(link: str) -> str:
+    return strip_internal_query_keys(link)
 
 
 def short_hash(value: str) -> str:
@@ -98,16 +126,21 @@ def format_description(item: ET.Element) -> str:
     severity = extract_field(old_description, "중요도") or "Low"
     reason = extract_field(old_description, "판단 근거")
     summary = extract_field(old_description, "요약")
-    link = clean_html_text(item.findtext("link") or "") or extract_href_for_label(old_description, "링크")
+    original_link = clean_html_text(item.findtext("link") or "") or extract_href_for_label(old_description, "링크")
     source_link = extract_href_for_label(old_description, "영어 원문 링크")
     category = category_from_item(item)
+    guid = clean_html_text(item.findtext("guid") or "")
+    slack_link = unique_link_for_slack(original_link, guid)
+
+    if slack_link and slack_link != original_link:
+        set_item_text(item, "link", slack_link)
 
     # Keep these as hidden fields for debug/review, but do not show severity in Slack messages.
     set_hidden_field(item, "severity", severity)
     set_hidden_field(item, "severityReason", reason)
     set_hidden_field(item, "category", category)
     set_hidden_field(item, "sourceLink", source_link)
-    set_hidden_field(item, "displayLink", link)
+    set_hidden_field(item, "displayLink", original_link)
 
     lines: list[str] = ["<p><b>AWS Update</b></p>"]
 
@@ -161,7 +194,8 @@ def write_slack_debug(channel: ET.Element) -> None:
         "debug_item_count": len(records),
         "duplicate_link_count": len(duplicate_records),
         "notes": [
-            "Slack RSS may suppress new items when multiple RSS items reuse the same link.",
+            "Slack RSS may suppress new items when multiple RSS items reuse the same canonical link.",
+            "The feed link may include aws-update-rss-guid so Slack sees repeated AWS document-history updates as separate items.",
             "Check duplicate_link_count and slack_risk for items that appear in feed.xml but did not arrive in Slack.",
         ],
         "items": records,
@@ -196,7 +230,7 @@ def write_slack_debug(channel: ET.Element) -> None:
   <p>Total items: {len(items)} / Debugged recent items: {len(records)}</p>
   <p>Duplicate-link items in recent list: {len(duplicate_records)}</p>
   <p>JSON: <a href=\"./slack-debug.json\">slack-debug.json</a></p>
-  <p><strong>Tip:</strong> If a feed item exists here but Slack did not post it, check whether <code>Duplicate link count</code> is greater than 1.</p>
+  <p><strong>Tip:</strong> The visible item link can include <code>aws-update-rss-guid</code> for Slack uniqueness. The Link hash is calculated after removing internal query keys.</p>
   <table border=\"1\" cellpadding=\"6\" cellspacing=\"0\">
     <thead>
       <tr><th>PubDate</th><th>Severity</th><th>Category</th><th>Title</th><th>GUID</th><th>Link hash</th><th>Duplicate link count</th><th>Slack risk</th></tr>
