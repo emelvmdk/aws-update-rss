@@ -18,6 +18,8 @@ GitHub Pages 배포 후 운영에서 사용하는 공개 URL입니다.
 | Slack RSS 발송 디버그 | `https://emelvmdk.github.io/aws-update-rss/slack-debug.html` |
 | Slack RSS 발송 디버그 JSON | `https://emelvmdk.github.io/aws-update-rss/slack-debug.json` |
 | Slack 재발송 큐 상태 | `https://emelvmdk.github.io/aws-update-rss/slack-replay-queue.json` |
+| Notion 동기화 상태 | `https://emelvmdk.github.io/aws-update-rss/notion-sync.html` |
+| Notion 동기화 상태 JSON | `https://emelvmdk.github.io/aws-update-rss/notion-sync.json` |
 | 마지막 실행 메타데이터 | `https://emelvmdk.github.io/aws-update-rss/last-run.json` |
 
 Slack 채널에는 아래 URL만 구독합니다.
@@ -39,6 +41,7 @@ Slack 채널에는 아래 URL만 구독합니다.
 - 중요도, 판단 근거, 카테고리는 디버그/검토용 hidden field로 유지
 - Slack RSS 발송 누락 확인용 `slack-debug.html/json` 생성
 - Slack RSS 재발송 큐 `slack-replay-queue.json` 생성
+- Notion DB 동기화용 `scripts/sync_notion.py` 제공
 - pytest 기반 핵심 로직 테스트
 
 ## 사용 흐름
@@ -57,6 +60,8 @@ pytest로 핵심 로직 검증
 없으면 영어 원문 fallback
   ↓
 public/feed.xml 생성
+  ↓
+Notion DB 저장
   ↓
 Slack 표시용 포맷 정리
   ↓
@@ -128,12 +133,72 @@ https://emelvmdk.github.io/aws-update-rss/slack-replay-queue.json
 
 여러 개를 재발송해야 해도 feed에는 동시에 여러 재발송 item을 넣지 않습니다. Slack RSS 앱이 여러 새 item을 한 메시지로 묶을 수 있기 때문에, 큐에서 하나씩 순차 공개합니다.
 
+## Notion DB 동기화
+
+GitHub Actions에서 RSS 생성 후 Notion DB로 항목을 저장할 수 있습니다. `NOTION_TOKEN`과 `NOTION_DATABASE_ID`가 없으면 동기화는 자동으로 스킵되며, 기존 RSS/Slack 동작은 계속 진행됩니다.
+
+### Notion DB 권장 속성
+
+아래 속성명을 그대로 만들면 별도 환경 변수 없이 동작합니다.
+
+| 속성명 | 타입 | 설명 |
+| --- | --- | --- |
+| 제목 | Title | AWS 게시물 제목 |
+| URL | URL | 원문 링크 |
+| 출처 | Select | `feed.xml`, `review.json`, 원본 feed 이름 |
+| 서비스 | Multi-select | `whats-new`, `operations`, `security-governance` 등 카테고리 |
+| 중요도 | Select | High / Medium / Low |
+| 상태 | Select | 미확인 / Boundary / Useful / Noise / 학습필요 |
+| 매칭 키워드 | Multi-select | 필터에 걸린 키워드 |
+| 검토 사유 | Text | Boundary / review 항목의 검토 사유 |
+| 게시일 | Date | AWS 게시물 게시일 |
+| 수집일 | Date | GitHub Actions 수집일 |
+| Slack 전송 | Checkbox | RSS feed에 포함되어 Slack 전송 대상인지 여부 |
+| GUID | Text | RSS GUID |
+| 중복 키 | Text | URL 정규화 기반 중복 체크 키 |
+
+### GitHub Actions Secrets
+
+아래 두 값을 저장소 Secret으로 등록합니다.
+
+```text
+Settings → Secrets and variables → Actions → Repository secrets
+```
+
+| Secret | 설명 |
+| --- | --- |
+| `NOTION_TOKEN` | Notion Internal Integration Token |
+| `NOTION_DATABASE_ID` | Notion DB ID |
+
+### Notion 권한 설정
+
+Notion에서 만든 Integration을 `AWS Update Tracker` DB 페이지에 연결해야 합니다.
+
+```text
+Notion DB 페이지 열기
+→ 우측 상단 ... 메뉴
+→ Connections
+→ 생성한 Integration 추가
+```
+
+### 동기화 결과 확인
+
+동기화 결과는 GitHub Pages에 아래 파일로 기록됩니다.
+
+```text
+https://emelvmdk.github.io/aws-update-rss/notion-sync.html
+https://emelvmdk.github.io/aws-update-rss/notion-sync.json
+```
+
+동일한 `중복 키`가 이미 Notion DB에 있으면 새 페이지를 만들지 않고, 자동 메타데이터만 갱신합니다. 이때 사람이 직접 바꾼 `상태` 값은 덮어쓰지 않습니다.
+
 ## 설정 파일
 
 - `feeds.yaml`, `feeds_blogs.yaml`, `feeds_edge.yaml`, `feeds_network.yaml`: 수집할 RSS 목록
 - `config.yaml`: 필터 키워드, 제외 키워드, 출력 설정
 - `generate_feed.py`: RSS 생성기
 - `scripts/format_slack_rss.py`: Slack 표시용 RSS description 포맷터 및 Slack 디버그 파일 생성
+- `scripts/sync_notion.py`: Notion DB 저장 및 중복 갱신 처리
 - `scripts/add_slack_replay_items.py`: Slack RSS 재발송 큐 처리
 - `scripts/schedule_gate.py`: 정기 실행 슬롯, catch-up, Slack 재발송 큐 실행 판단
 - `tests/test_generate_feed.py`: 핵심 로직 테스트
@@ -145,10 +210,11 @@ https://emelvmdk.github.io/aws-update-rss/slack-replay-queue.json
 python -m pip install -r requirements.txt
 pytest -q
 python generate_feed.py
+python scripts/sync_notion.py
 python scripts/format_slack_rss.py
 ```
 
-생성 결과는 `public/feed.xml`, `public/index.html`, `public/status.html`, `public/review.html`, `public/review.json`, `public/slack-debug.html`, `public/slack-debug.json`에 저장됩니다.
+생성 결과는 `public/feed.xml`, `public/index.html`, `public/status.html`, `public/review.html`, `public/review.json`, `public/slack-debug.html`, `public/slack-debug.json`, `public/notion-sync.html`, `public/notion-sync.json`에 저장됩니다.
 
 ## 테스트 범위
 
@@ -177,12 +243,14 @@ https://emelvmdk.github.io/aws-update-rss/feed.xml
 https://emelvmdk.github.io/aws-update-rss/slack-debug.html
 https://emelvmdk.github.io/aws-update-rss/status.html
 https://emelvmdk.github.io/aws-update-rss/review.html
+https://emelvmdk.github.io/aws-update-rss/notion-sync.html
 ```
 
 아래 항목은 절대 README, 코드, 설정 파일에 직접 저장하지 않습니다.
 
 ```text
 Slack Webhook URL
+Notion Internal Integration Token
 GitHub token
 AWS Access Key / Secret Access Key
 API key
