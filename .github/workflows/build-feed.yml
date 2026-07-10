@@ -87,6 +87,14 @@ jobs:
         run: |
           python generate_feed.py
 
+      - name: Sync updates to Notion database
+        if: ${{ steps.schedule_gate.outputs.should_run == 'true' }}
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
+        run: |
+          python scripts/sync_notion.py
+
       - name: Process Slack RSS replay queue
         if: ${{ steps.schedule_gate.outputs.should_run == 'true' }}
         env:
