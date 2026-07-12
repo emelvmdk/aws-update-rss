@@ -5,6 +5,7 @@ import html
 import json
 import os
 import re
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,9 +14,12 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import generate_feed as gf
 
-ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_DIR = ROOT / "public"
 REVIEW_JSON_FILE = PUBLIC_DIR / "review.json"
 NOTION_SYNC_JSON_FILE = PUBLIC_DIR / "notion-sync.json"
@@ -52,13 +56,29 @@ def truncate(value: str, limit: int) -> str:
 
 def canonical_url(url: str) -> str:
     parsed = urlparse(clean_text(url))
-    query = [(k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True) if not k.lower().startswith("utm_") and k.lower() not in gf.TRACKING_QUERY_KEYS]
+    query = [
+        (k, v)
+        for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+        if not k.lower().startswith("utm_") and k.lower() not in gf.TRACKING_QUERY_KEYS
+    ]
     path = re.sub(r"/+$", "", parsed.path or "/") or "/"
-    return urlunparse(parsed._replace(scheme=parsed.scheme.lower(), netloc=parsed.netloc.lower(), path=path, query=urlencode(query), fragment=""))
+    return urlunparse(
+        parsed._replace(
+            scheme=parsed.scheme.lower(),
+            netloc=parsed.netloc.lower(),
+            path=path,
+            query=urlencode(query),
+            fragment="",
+        )
+    )
 
 
 def description_field(description: str, label: str) -> str:
-    match = re.search(rf"<strong>\s*{re.escape(label)}\s*</strong>\s*:\s*(.*?)</p>", description or "", re.I | re.S)
+    match = re.search(
+        rf"<strong>\s*{re.escape(label)}\s*</strong>\s*:\s*(.*?)</p>",
+        description or "",
+        re.I | re.S,
+    )
     return clean_text(match.group(1)) if match else ""
 
 
@@ -85,8 +105,14 @@ def collect_enriched_items() -> tuple[list[dict[str, Any]], list[str]]:
         included, matches, reason = original_evaluate(entry, feed, cfg)
         score_reasons: list[str] = []
         if matches and gf.feed_requires_url_hint(feed):
-            contextual = gf.matched_keywords(gf.entry_text(entry), cfg.get("what_new_filter", {}).get("contextual_keywords", []))
-            relevance = gf.matched_keywords(gf.entry_text(entry), cfg.get("what_new_filter", {}).get("relevance_keywords", []))
+            contextual = gf.matched_keywords(
+                gf.entry_text(entry),
+                cfg.get("what_new_filter", {}).get("contextual_keywords", []),
+            )
+            relevance = gf.matched_keywords(
+                gf.entry_text(entry),
+                cfg.get("what_new_filter", {}).get("relevance_keywords", []),
+            )
             if contextual and relevance:
                 _, score_reasons, _ = gf.score_broad_keyword_match(entry, contextual, relevance)
         metadata_by_entry[id(entry)] = {
@@ -119,47 +145,62 @@ def collect_enriched_items() -> tuple[list[dict[str, Any]], list[str]]:
         fields = meta.get("matched_fields", [])
         if fields:
             reasons.insert(0, "matched fields: " + ", ".join(fields))
-        notion_items.append({
-            "title": clean_text(title) or "Untitled",
-            "url": clean_text(item.get("link", "")),
-            "source": "feed.xml",
-            "service": [clean_text(item.get("category", "general"))],
-            "severity": clean_text(item.get("severity", "Low")),
-            "status": "미확인",
-            "matched_keywords": meta.get("matched_keywords", []),
-            "review_reason": "; ".join(reasons),
-            "published_at": item["published_at"].isoformat(),
-            "collected_at": now,
-            "slack_sent": True,
-            "guid": clean_text(item.get("guid", "")),
-            "dedupe_key": canonical_url(item.get("link", "")) or clean_text(item.get("guid", "")),
-            "summary": description_field(item.get("description", ""), "요약"),
-            "matched_fields": fields,
-        })
+        notion_items.append(
+            {
+                "title": clean_text(title) or "Untitled",
+                "url": clean_text(item.get("link", "")),
+                "source": "feed.xml",
+                "service": [clean_text(item.get("category", "general"))],
+                "severity": clean_text(item.get("severity", "Low")),
+                "status": "미확인",
+                "matched_keywords": meta.get("matched_keywords", []),
+                "review_reason": "; ".join(reasons),
+                "published_at": item["published_at"].isoformat(),
+                "collected_at": now,
+                "slack_sent": True,
+                "guid": clean_text(item.get("guid", "")),
+                "dedupe_key": canonical_url(item.get("link", "")) or clean_text(item.get("guid", "")),
+                "summary": description_field(item.get("description", ""), "요약"),
+                "matched_fields": fields,
+            }
+        )
 
     for item in review_items:
         link = clean_text(item.get("link", ""))
         reason = clean_text(item.get("review_reason", ""))
-        notion_items.append({
-            "title": clean_text(item.get("title", "Untitled")),
-            "url": link,
-            "source": "review.json",
-            "service": [clean_text(item.get("category", "general"))],
-            "severity": "Low",
-            "status": "Boundary",
-            "matched_keywords": [clean_text(x) for x in item.get("matched_keywords", []) if clean_text(x)],
-            "review_reason": reason,
-            "published_at": clean_text(item.get("published_at", "")),
-            "collected_at": now,
-            "slack_sent": False,
-            "guid": "",
-            "dedupe_key": "review|" + (canonical_url(link) or hashlib.sha1(clean_text(item.get("title", "")).encode()).hexdigest()),
-            "summary": f"검토 사유: {reason}" if reason else "",
-            "matched_fields": [],
-        })
+        notion_items.append(
+            {
+                "title": clean_text(item.get("title", "Untitled")),
+                "url": link,
+                "source": "review.json",
+                "service": [clean_text(item.get("category", "general"))],
+                "severity": "Low",
+                "status": "Boundary",
+                "matched_keywords": [clean_text(x) for x in item.get("matched_keywords", []) if clean_text(x)],
+                "review_reason": reason,
+                "published_at": clean_text(item.get("published_at", "")),
+                "collected_at": now,
+                "slack_sent": False,
+                "guid": "",
+                "dedupe_key": "review|"
+                + (
+                    canonical_url(link)
+                    or hashlib.sha1(clean_text(item.get("title", "")).encode()).hexdigest()
+                ),
+                "summary": f"검토 사유: {reason}" if reason else "",
+                "matched_fields": [],
+            }
+        )
 
     PUBLIC_DIR.mkdir(exist_ok=True)
-    NOTION_ITEMS_JSON_FILE.write_text(json.dumps({"generated_at": now, "count": len(notion_items), "items": notion_items}, ensure_ascii=False, indent=2), encoding="utf-8")
+    NOTION_ITEMS_JSON_FILE.write_text(
+        json.dumps(
+            {"generated_at": now, "count": len(notion_items), "items": notion_items},
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
     return notion_items, failures
 
 
@@ -176,7 +217,13 @@ def select_prop(value: str) -> dict[str, Any]:
 
 
 def multi_prop(values: list[str]) -> dict[str, Any]:
-    return {"multi_select": [{"name": truncate(v, 90)} for v in dict.fromkeys(clean_text(x) for x in values) if v]}
+    return {
+        "multi_select": [
+            {"name": truncate(v, 90)}
+            for v in dict.fromkeys(clean_text(x) for x in values)
+            if v
+        ]
+    }
 
 
 def properties(item: dict[str, Any], include_status: bool = True) -> dict[str, Any]:
@@ -203,7 +250,13 @@ class NotionClient:
     def __init__(self, token: str, database_id: str) -> None:
         self.database_id = database_id
         self.session = requests.Session()
-        self.session.headers.update({"Authorization": f"Bearer {token}", "Notion-Version": NOTION_VERSION, "Content-Type": "application/json"})
+        self.session.headers.update(
+            {
+                "Authorization": f"Bearer {token}",
+                "Notion-Version": NOTION_VERSION,
+                "Content-Type": "application/json",
+            }
+        )
 
     def request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
         for _ in range(5):
@@ -216,32 +269,79 @@ class NotionClient:
         return response
 
     def find(self, dedupe_key: str) -> str | None:
-        payload = {"filter": {"property": PROPERTY_DEDUPE_KEY, "rich_text": {"equals": dedupe_key}}, "page_size": 1}
-        results = self.request("POST", f"https://api.notion.com/v1/databases/{self.database_id}/query", json=payload).json().get("results", [])
+        payload = {
+            "filter": {
+                "property": PROPERTY_DEDUPE_KEY,
+                "rich_text": {"equals": dedupe_key},
+            },
+            "page_size": 1,
+        }
+        results = self.request(
+            "POST",
+            f"https://api.notion.com/v1/databases/{self.database_id}/query",
+            json=payload,
+        ).json().get("results", [])
         return results[0]["id"] if results else None
 
     def create(self, item: dict[str, Any]) -> None:
-        details = [f"요약: {item['summary']}" if item.get("summary") else "", f"링크: {item['url']}" if item.get("url") else "", f"매칭 위치: {', '.join(item.get('matched_fields', []))}" if item.get("matched_fields") else "", f"매칭 키워드: {', '.join(item.get('matched_keywords', []))}" if item.get("matched_keywords") else "", f"판단 근거: {item['review_reason']}" if item.get("review_reason") else ""]
+        details = [
+            f"요약: {item['summary']}" if item.get("summary") else "",
+            f"링크: {item['url']}" if item.get("url") else "",
+            f"매칭 위치: {', '.join(item.get('matched_fields', []))}" if item.get("matched_fields") else "",
+            f"매칭 키워드: {', '.join(item.get('matched_keywords', []))}" if item.get("matched_keywords") else "",
+            f"판단 근거: {item['review_reason']}" if item.get("review_reason") else "",
+        ]
         text = "\n".join(x for x in details if x) or "자동 수집된 AWS 업데이트 항목입니다."
-        payload = {"parent": {"database_id": self.database_id}, "properties": properties(item), "children": [{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": truncate(text, 1900)}}]}}]}
+        payload = {
+            "parent": {"database_id": self.database_id},
+            "properties": properties(item),
+            "children": [
+                {
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {
+                        "rich_text": [
+                            {"type": "text", "text": {"content": truncate(text, 1900)}}
+                        ]
+                    },
+                }
+            ],
+        }
         self.request("POST", "https://api.notion.com/v1/pages", json=payload)
 
     def update(self, page_id: str, item: dict[str, Any]) -> None:
-        self.request("PATCH", f"https://api.notion.com/v1/pages/{page_id}", json={"properties": properties(item, include_status=False)})
+        self.request(
+            "PATCH",
+            f"https://api.notion.com/v1/pages/{page_id}",
+            json={"properties": properties(item, include_status=False)},
+        )
 
 
 def write_report(report: dict[str, Any]) -> None:
     PUBLIC_DIR.mkdir(exist_ok=True)
-    NOTION_SYNC_JSON_FILE.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    NOTION_SYNC_JSON_FILE.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     errors = "".join(f"<li>{html.escape(x)}</li>" for x in report["errors"]) or "<li>No errors</li>"
-    NOTION_SYNC_HTML_FILE.write_text(f"<!doctype html><html lang='ko'><meta charset='utf-8'><title>Notion Sync Status</title><h1>Notion Sync Status</h1><p>Generated: {report['generated_at']}</p><p>Enabled: {report['enabled']}</p><p>Loaded: {report['loaded_items']}</p><p>Created: {report['created']}</p><p>Updated: {report['updated']}</p><p>Skipped: {report['skipped']}</p><h2>Errors</h2><ul>{errors}</ul></html>", encoding="utf-8")
+    NOTION_SYNC_HTML_FILE.write_text(
+        f"<!doctype html><html lang='ko'><meta charset='utf-8'><title>Notion Sync Status</title><h1>Notion Sync Status</h1><p>Generated: {report['generated_at']}</p><p>Enabled: {report['enabled']}</p><p>Loaded: {report['loaded_items']}</p><p>Created: {report['created']}</p><p>Updated: {report['updated']}</p><p>Skipped: {report['skipped']}</p><h2>Errors</h2><ul>{errors}</ul></html>",
+        encoding="utf-8",
+    )
 
 
 def main() -> None:
     token = os.getenv("NOTION_TOKEN", "").strip()
     database_id = os.getenv("NOTION_DATABASE_ID", "").strip()
     strict = os.getenv("NOTION_SYNC_STRICT", "false").lower() in {"1", "true", "yes"}
-    report = {"generated_at": datetime.now(timezone.utc).isoformat(), "enabled": bool(token and database_id), "loaded_items": 0, "created": 0, "updated": 0, "skipped": 0, "errors": []}
+    report = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "enabled": bool(token and database_id),
+        "loaded_items": 0,
+        "created": 0,
+        "updated": 0,
+        "skipped": 0,
+        "errors": [],
+    }
     try:
         items, failures = collect_enriched_items()
         report["loaded_items"] = len(items)
@@ -271,7 +371,11 @@ def main() -> None:
             raise
     finally:
         write_report(report)
-    print(f"Notion sync completed: created={report['created']}, updated={report['updated']}, skipped={report['skipped']}, errors={len(report['errors'])}")
+    print(
+        "Notion sync completed: "
+        f"created={report['created']}, updated={report['updated']}, "
+        f"skipped={report['skipped']}, errors={len(report['errors'])}"
+    )
 
 
 if __name__ == "__main__":
